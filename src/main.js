@@ -40,7 +40,7 @@ function renderLogin() {
   app.innerHTML = `
     <div class="login-container">
       <div class="login-card">
-        <div class="brand" style="justify-content: center; margin-bottom: 1rem;">⚡ ProEdit</div>
+        <div class="brand" style="justify-content: center; margin-bottom: 1rem;">ProEdit</div>
         <h1 class="login-title">Welcome back</h1>
         <p class="login-subtitle">Sign in to your account to continue</p>
         
@@ -783,7 +783,7 @@ function renderLanding() {
   app.innerHTML = `
     <div class="landing-container">
       <nav class="landing-nav">
-        <div class="brand">⚡ ProEdit</div>
+        <div class="brand">ProEdit</div>
         <button class="auth-btn" style="width: auto; padding: 0.5rem 1.5rem;" onclick="renderLogin()">Sign In</button>
       </nav>
       
