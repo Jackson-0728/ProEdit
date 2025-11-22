@@ -160,7 +160,9 @@ function renderDashboard() {
       <div class="grid" id="docGrid">
         ${documents.map(doc => `
           <div class="doc-card" onclick="window.openDoc('${doc.id}')">
-            <button class="delete-btn" onclick="window.deleteDoc(event, '${doc.id}')" title="Delete">🗑️</button>
+            <button class="delete-btn" onclick="window.deleteDoc(event, '${doc.id}')" title="Delete">
+            <i class="iconoir-trash"></i>
+            </button>
             <div class="doc-preview">
               ${doc.content.replace(/<[^>]*>/g, '').slice(0, 150) || 'Empty document...'}
             </div>
@@ -182,51 +184,124 @@ function renderDashboard() {
 
 function renderEditor() {
   const doc = documents.find(d => d.id === currentDocId);
-  if (!doc) return renderDashboard();
+  if (!doc) return;
 
   app.innerHTML = `
     <div class="editor-layout">
-      <div class="toolbar">
-        <button class="back-btn" id="backBtn" title="Back to Dashboard">←</button>
-        <input type="text" class="doc-title-input" id="docTitle" value="${doc.title}">
-        
-        <div class="tools">
-          <select class="tool-select" id="fontFamily" title="Font Family">
-            <option value="Inter, sans-serif">Inter</option>
-            <option value="'Merriweather', serif">Merriweather</option>
-            <option value="'Roboto Mono', monospace">Mono</option>
-            <option value="'Comic Sans MS', cursive">Comic Sans</option>
-          </select>
-          <select class="tool-select" id="fontSize" title="Font Size">
-            <option value="3">Normal</option>
-            <option value="1">Small</option>
-            <option value="5">Large</option>
-            <option value="7">Huge</option>
-          </select>
-          <div class="separator"></div>
-          <button class="tool-btn" data-cmd="bold" title="Bold"><b>B</b></button>
-          <button class="tool-btn" data-cmd="italic" title="Italic"><i>I</i></button>
-          <button class="tool-btn" data-cmd="underline" title="Underline"><u>U</u></button>
-          <button class="tool-btn" data-cmd="justifyLeft" title="Align Left">⇤</button>
-          <button class="tool-btn" data-cmd="justifyCenter" title="Align Center">⇹</button>
-          <div class="separator"></div>
-          <div class="dropdown">
-            <button class="tool-btn" id="exportBtn" title="Export">⬇</button>
-            <div class="dropdown-content">
-              <button onclick="window.exportDoc('pdf')">PDF (.pdf)</button>
-              <button onclick="window.exportDoc('word')">Word (.doc)</button>
-              <button onclick="window.exportDoc('md')">Markdown (.md)</button>
+      <!-- Top Bar: Menu + Toolbar -->
+      <div class="top-bar">
+        <div class="menu-bar">
+          <div class="doc-info">
+            <input type="text" class="doc-title-input" id="docTitle" value="${doc.title || 'Untitled Document'}" placeholder="Untitled Document">
+          </div>
+          <div style="flex: 1"></div>
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <button class="tool-btn" id="backBtn" title="Back to Dashboard">
+              <i class="iconoir-arrow-left"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <div class="toolbar-group">
+            <button class="tool-btn" onclick="document.execCommand('undo')" title="Undo">
+              <i class="iconoir-undo"></i>
+            </button>
+            <button class="tool-btn" onclick="document.execCommand('redo')" title="Redo">
+              <i class="iconoir-redo"></i>
+            </button>
+          </div>
+
+          <div class="toolbar-group">
+            <select class="tool-select" id="fontFamily" title="Font">
+              <option value="Arial">Arial</option>
+              <option value="Inter">Inter</option>
+              <option value="Roboto">Roboto</option>
+              <option value="Open Sans">Open Sans</option>
+              <option value="Merriweather">Merriweather</option>
+              <option value="Playfair Display">Playfair Display</option>
+              <option value="Courier Prime">Courier Prime</option>
+              <option value="Comic Neue">Comic Neue</option>
+              <option value="Lobster">Lobster</option>
+              <option value="Pacifico">Pacifico</option>
+              <option value="Oswald">Oswald</option>
+            </select>
+            <select class="tool-select" id="fontSize" title="Font Size">
+              <option value="1">10px</option>
+              <option value="2">13px</option>
+              <option value="3" selected>16px</option>
+              <option value="4">18px</option>
+              <option value="5">24px</option>
+              <option value="6">32px</option>
+              <option value="7">48px</option>
+            </select>
+          </div>
+
+          <div class="toolbar-group">
+            <button class="tool-btn" data-cmd="bold" title="Bold">
+              <i class="iconoir-bold"></i>
+            </button>
+            <button class="tool-btn" data-cmd="italic" title="Italic">
+              <i class="iconoir-italic"></i>
+            </button>
+            <button class="tool-btn" data-cmd="underline" title="Underline">
+              <i class="iconoir-underline"></i>
+            </button>
+          </div>
+
+          <div class="toolbar-group">
+            <button class="tool-btn" data-cmd="justifyLeft" title="Align Left">
+              <i class="iconoir-align-left"></i>
+            </button>
+            <button class="tool-btn" data-cmd="justifyCenter" title="Align Center">
+              <i class="iconoir-align-center"></i>
+            </button>
+            <button class="tool-btn" data-cmd="justifyRight" title="Align Right">
+              <i class="iconoir-align-right"></i>
+            </button>
+            <button class="tool-btn" data-cmd="justifyFull" title="Justify">
+              <i class="iconoir-align-justify"></i>
+            </button>
+          </div>
+
+          <div class="toolbar-group">
+            <button class="tool-btn" data-cmd="insertUnorderedList" title="Bullet List">
+              <i class="iconoir-list"></i>
+            </button>
+            <button class="tool-btn" data-cmd="insertOrderedList" title="Numbered List">
+              <i class="iconoir-numbered-list-left"></i>
+            </button>
+          </div>
+
+          <div class="toolbar-group">
+            <div class="dropdown">
+              <button class="tool-btn" id="exportBtn" title="Export">
+                <i class="iconoir-download"></i>
+              </button>
+              <div class="dropdown-content">
+                <button onclick="window.exportDoc('pdf')">PDF (.pdf)</button>
+                <button onclick="window.exportDoc('word')">Word (.doc)</button>
+                <button onclick="window.exportDoc('md')">Markdown (.md)</button>
+              </div>
             </div>
           </div>
         </div>
-        
-        <button class="ai-trigger" id="aiTrigger">AI Assistant</button>
+
       </div>
-      
-      <div class="editor-scroll">
-        <div class="editor-page" id="editor" contenteditable="true" data-placeholder="Type '/' for commands...">${doc.content}</div>
+
+      <!-- Editor Area -->
+      <div class="editor-scroll-container">
+        <div id="editor" contenteditable="true" spellcheck="false">
+          ${doc.content}
+        </div>
       </div>
-      
+
+      <!-- AI Trigger -->
+      <button class="ai-trigger" id="aiTrigger" title="Ask AI">
+        <i class="iconoir-sparks"></i>
+      </button>
+
+      <!-- Slash Menu -->
       <div class="slash-menu" id="slashMenu">
         <div class="slash-item" data-action="continue">
           <div class="slash-info">
@@ -248,6 +323,7 @@ function renderEditor() {
         </div>
       </div>
 
+      <!-- AI Chat Popup -->
       <div class="ai-popup" id="aiPopup">
         <div class="ai-header">
           <div class="ai-title">AI Assistant</div>
@@ -268,6 +344,12 @@ function renderEditor() {
   `;
 
   setupEditorListeners();
+
+  // Page Break Listener
+  document.getElementById('pageBreakBtn').addEventListener('click', () => {
+    const pageBreak = '<div class="page-break" contenteditable="false"></div>';
+    document.execCommand('insertHTML', false, pageBreak);
+  });
 }
 
 // --- ACTIONS ---
@@ -320,6 +402,10 @@ function updateCurrentDoc(updates) {
   }
 }
 
+// --- AI CHAT & EDITING ---
+
+let currentSelection = null;
+
 // --- EDITOR LOGIC ---
 
 function setupEditorListeners() {
@@ -333,6 +419,22 @@ function setupEditorListeners() {
   const aiTrigger = document.getElementById('aiTrigger');
   const aiInput = document.getElementById('aiInput');
   const aiSend = document.getElementById('aiSend');
+
+  // Track selection for Contextual Editing
+  document.addEventListener('selectionchange', () => {
+    const selection = window.getSelection();
+    console.log('Selection change:', selection.toString(), selection.rangeCount);
+    if (selection.rangeCount > 0 && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      if (editor.contains(range.commonAncestorContainer)) {
+        currentSelection = {
+          text: selection.toString(),
+          range: range.cloneRange()
+        };
+        console.log('Captured selection:', currentSelection.text);
+      }
+    }
+  });
 
   backBtn.addEventListener('click', () => {
     currentDocId = null;
@@ -373,11 +475,32 @@ function setupEditorListeners() {
   });
 
   // AI Chat
+  // Capture selection on mousedown to avoid focus loss
+  aiTrigger.addEventListener('mousedown', (e) => {
+    e.preventDefault(); // Prevent focus loss
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0 && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      if (editor.contains(range.commonAncestorContainer) || range.commonAncestorContainer === editor) {
+        currentSelection = {
+          text: selection.toString(),
+          range: range.cloneRange()
+        };
+        console.log('Captured selection on mousedown:', currentSelection.text);
+      }
+    }
+  });
+
   aiTrigger.addEventListener('click', () => {
-    aiPopup.classList.add('visible');
-    aiInput.focus();
-    if (document.getElementById('aiMessages').children.length === 0) {
-      addAiMessage("Hello! I can help you write, edit, or summarize this document. Just ask!");
+    const popup = document.getElementById('aiPopup');
+    popup.style.display = 'flex';
+    document.getElementById('aiInput').focus();
+
+    // If text is selected, show a hint in the input
+    if (currentSelection && currentSelection.text) {
+      document.getElementById('aiInput').placeholder = `Edit: "${currentSelection.text.slice(0, 20)}..."`;
+    } else {
+      document.getElementById('aiInput').placeholder = "Ask AI to write, edit, or summarize...";
     }
   });
 

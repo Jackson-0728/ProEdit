@@ -1,19 +1,21 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-
 export async function generateContent(prompt) {
-    console.log("Generating content for prompt:", prompt.slice(0, 50) + "...");
     try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-        console.log("Content generated successfully");
-        return text;
+        const response = await fetch('http://localhost:3000/api/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ prompt }),
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to generate content');
+        }
+
+        const data = await response.json();
+        return data.text;
     } catch (error) {
-        console.error("Gemini API Error:", error);
-        return `Error: ${error.message || "Something went wrong with the AI."}`;
+        console.error('Error calling AI:', error);
+        return "I'm sorry, I encountered an error while processing your request.";
     }
 }
