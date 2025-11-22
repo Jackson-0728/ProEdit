@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ProEdit</title>
+
+<style>
+/* -----------------------
+   GLOBAL STYLES
+------------------------*/
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  background: #f6f7fb;
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* -----------------------
+   LEFT SIDEBAR
+------------------------*/
+.sidebar {
+  width: 240px;
+  background: #ffffff;
+  border-right: 1px solid #e5e7eb;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar h2 {
+  font-size: 20px;
+  margin-bottom: 24px;
+  font-weight: 700;
+}
+
+.sidebar button {
+  background: none;
+  border: none;
+  padding: 10px 6px;
+  text-align: left;
+  font-size: 15px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.sidebar button:hover {
+  background: #f1f1f1;
+}
+
+/* -----------------------
+   MAIN EDITOR AREA
+------------------------*/
+.container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* TOP TOOLBAR */
+.toolbar {
+  backdrop-filter: blur(16px);
+  background: rgba(255,255,255,0.7);
+  border-bottom: 1px solid #e3e3e3;
+  padding: 10px 20px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.doc-title {
+  font-size: 18px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: 0.2s;
+}
+
+.doc-title:hover {
+  border: 1px solid #ccc;
+  background: #fafafa;
+}
+
+/* Toolbar buttons */
+.tool-btn {
+  background: none;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.tool-btn:hover {
+  background: #f1f1f1;
+}
+
+/* Right AI button */
+.ai-btn {
+  margin-left: auto;
+  background: #3a7afe;
+  color: white;
+  border: none;
+  padding: 7px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.ai-btn:hover {
+  opacity: 0.85;
+}
+
+/* -----------------------
+   EDITOR CANVAS
+------------------------*/
+.editor-area {
+  height: 100%;
+  overflow-y: scroll;
+  padding: 40px 0;
+  display: flex;
+  justify-content: center;
+}
+
+.editor {
+  width: 800px;
+  min-height: 1200px;
+  background: white;
+  padding: 40px;
+  border-radius: 10px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+  line-height: 1.6;
+  font-size: 17px;
+}
+
+/* -----------------------
+   RIGHT AI PANEL (UI ONLY)
+------------------------*/
+.ai-panel {
+  width: 320px;
+  background: white;
+  border-left: 1px solid #ddd;
+  height: 100%;
+  position: fixed;
+  right: -350px;
+  top: 0;
+  transition: 0.3s;
+  padding: 24px;
+}
+
+.ai-panel.open {
+  right: 0;
+}
+
+.ai-panel h3 {
+  margin-bottom: 12px;
+}
+
+.close-ai {
+  background: none;
+  border: none;
+  font-size: 20px;
+  float: right;
+  cursor: pointer;
+}
+</style>
+
+</head>
+<body>
+
+<!-- LEFT SIDEBAR -->
+<div class="sidebar">
+  <h2>ProEdit</h2>
+  <button>📄 Documents</button>
+  <button>✨ Templates</button>
+  <button>👥 Shared</button>
+  <button>🗑️ Trash</button>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="container">
+
+  <!-- TOP TOOLBAR -->
+  <div class="toolbar">
+    <input class="doc-title" value="Untitled Document">
+    <button class="tool-btn">File</button>
+    <button class="tool-btn">Edit</button>
+    <button class="tool-btn">Insert</button>
+    <button class="tool-btn">Format</button>
+
+    <button class="ai-btn" onclick="openAI()">✨ AI</button>
+  </div>
+
+  <!-- EDITOR AREA -->
+  <div class="editor-area">
+    <div class="editor" contenteditable="true">
+      Start writing here...
+    </div>
+  </div>
+
+</div>
+
+<!-- RIGHT AI PANEL -->
+<div id="aiPanel" class="ai-panel">
+  <button class="close-ai" onclick="closeAI()">×</button>
+  <h3>AI Assistant</h3>
+  <p>This is where AI suggestions, rewrites, and summaries will appear.</p>
+</div>
+
+<script>
+function openAI() {
+  document.getElementById("aiPanel").classList.add("open");
+}
+
+function closeAI() {
+  document.getElementById("aiPanel").classList.remove("open");
+}
+</script>
+
+</body>
+</html>
