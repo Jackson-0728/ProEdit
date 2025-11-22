@@ -13,23 +13,23 @@ const app = document.querySelector('#app');
 // --- INITIALIZATION ---
 
 async function init() {
-  user = await getUser();
+  const { data: { session } } = await supabase.auth.getSession();
+  user = session?.user;
+
   if (user) {
     loadDocs();
     renderDashboard();
   } else {
-    renderLogin();
+    renderLanding();
   }
 
-  // Listen for auth changes
-  supabase.auth.onAuthStateChange((event, session) => {
-    user = session?.user || null;
+  supabase.auth.onAuthStateChange((_event, session) => {
+    user = session?.user;
     if (user) {
       loadDocs();
       renderDashboard();
     } else {
-      documents = []; // Clear docs on logout
-      renderLogin();
+      renderLanding();
     }
   });
 }
@@ -777,3 +777,26 @@ function showAiPopup(content, isLoading = false) {
 
 // Start App
 init();
+
+function renderLanding() {
+  window.renderLogin = renderLogin; // Ensure global access
+  app.innerHTML = `
+    <div class="landing-container">
+      <nav class="landing-nav">
+        <div class="brand">⚡ ProEdit</div>
+        <button class="auth-btn" style="width: auto; padding: 0.5rem 1.5rem;" onclick="renderLogin()">Sign In</button>
+      </nav>
+      
+      <main class="landing-hero">
+        <h1 class="hero-title">Write Smarter, Not Harder</h1>
+        <p class="hero-subtitle">The intelligent writing assistant that helps you create, edit, and format your documents with the power of AI.</p>
+        <button class="cta-btn" onclick="renderLogin()">Start Writing for Free</button>
+      </main>
+      
+      
+      <footer class="landing-footer">
+        &copy; 2025 ProEdit. All rights reserved.
+      </footer>
+    </div>
+  `;
+}
