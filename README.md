@@ -2,15 +2,14 @@
 
 ProEdit is a modern, AI-powered text editor designed for professionals. It combines a distraction-free writing environment with advanced AI capabilities to help you write faster, edit smarter, and create content that stands out.
 
-![ProEdit Screenshot](https://via.placeholder.com/800x450?text=ProEdit+Screenshot)
+![ProEdit Screenshot](https://i.postimg.cc/44WZJpzw/jie-ping2025-11-23-xia-wu7-21-09.png)
 
 ## Features
 
-- **✨ AI Assistant**: Powered by Google Gemini 2.5 Flash. Generate content, summarize text, and get writing suggestions instantly.
-- **☁️ Cloud Sync**: Seamlessly sync your documents across devices using Supabase.
-- **📝 Rich Text Editor**: A powerful, clean interface with all the essential formatting tools.
-- **💬 Feedback System**: Built-in feedback mechanism to collect user insights.
-- **🔒 Secure Architecture**: Backend proxy server to protect API keys.
+- **AI Assistant**: Generate content, summarize text, and get writing suggestions instantly.
+- **Cloud Sync**: Seamlessly sync your documents across devices using Supabase.
+- **Rich Text Editor**: A powerful, clean interface with all the essential formatting tools.
+- **Feedback System**: Built-in feedback mechanism to collect user insights.
 
 ## Tech Stack
 
@@ -48,7 +47,7 @@ Before you begin, ensure you have the following:
     VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
 
     # Gemini API Configuration (Server-side)
-    GEMINI_API_KEY=your_gemini_api_key
+    VITE_GEMINI_API_KEY=your_gemini_api_key
     ```
 
 4.  **Database Setup**
@@ -66,6 +65,18 @@ Before you begin, ensure you have the following:
     -- Allow public inserts (for feedback form)
     create policy "Allow public insert" on proedit_feedback for insert to public with check (true);
     ```
+
+5.  **Setup Supabase Auth**
+    - Go to your Supabase project
+    - Navigate to Auth > Settings
+    - Enable Email/Password authentication
+    - Enable Google and GitHub authentication and put in your secrets
+    - Save changes
+
+6.  **Setup Google Gemini API**
+    - Navigate to AI Studio > API Keys
+    - Create a new API key
+    - Save the API key in your `.env` file
 
 ## Running the Application
 
@@ -85,4 +96,10 @@ Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ## License
 
-MIT
+Copyright (c) 2025 Jackson Liu
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
