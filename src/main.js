@@ -1,6 +1,6 @@
 import './style.css';
 import { generateContent } from './api/gemini.js';
-import { supabase, signIn, signUp, signInWithProvider, signOut, getUser } from './api/supabase.js';
+import { supabase, signIn, signUp, signInWithProvider, signOut, getUser, submitFeedback } from './api/supabase.js';
 
 // State
 let documents = [];
@@ -11,6 +11,9 @@ let user = null;
 const app = document.querySelector('#app');
 
 // --- INITIALIZATION ---
+
+window.renderLogin = renderLogin; // Expose to global scope for inline onclick handlers
+
 
 async function init() {
   const { data: { session } } = await supabase.auth.getSession();
@@ -36,6 +39,46 @@ async function init() {
 
 // --- VIEWS ---
 
+function renderLanding() {
+  app.innerHTML = `
+    <div class="landing-page">
+      <nav class="landing-nav">
+        <div class="brand">ProEdit</div>
+        <div class="nav-links">
+          <button class="nav-btn primary" onclick="renderLogin()">Get Started</button>
+        </div>
+      </nav>
+      
+      <main class="landing-hero">
+        <h1 class="hero-title">Writing, <span class="gradient-text">Reimagined</span> with AI.</h1>
+        <p class="hero-subtitle">The advanced AI-powered editor for professionals. Write faster, edit smarter, and create content that stands out.</p>
+        <div class="hero-cta">
+          <button class="cta-btn" onclick="renderLogin()">Start Writing for Free</button>
+          <button class="cta-btn secondary" onclick="window.open('https://github.com/Jackson-0728/ProEdit', '_blank')">View on GitHub</button>
+        </div>
+        
+        <div class="features-grid">
+          <div class="feature-card">
+            <div class="feature-icon"><i class="iconoir-sparks"></i></div>
+            <h3>AI Assistant</h3>
+            <p>Generate content, summarize text, and get writing suggestions instantly.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon"><i class="iconoir-cloud"></i></div>
+            <h3>Cloud Sync</h3>
+            <p>Access your documents from anywhere. Your work is always safe.</p>
+          </div>
+          <div class="feature-card">
+            <div class="feature-icon"><i class="iconoir-edit-pencil"></i></div>
+            <h3>Rich Editor</h3>
+            <p>A powerful, distraction-free editor with all the formatting tools you need.</p>
+          </div>
+        </div>
+      </main>
+    </div>
+  `;
+}
+
 function renderLogin() {
   app.innerHTML = `
     <div class="login-container">
@@ -60,11 +103,11 @@ function renderLogin() {
 
         <div class="oauth-buttons">
           <button class="oauth-btn" id="googleBtn">
-            <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="oauth-icon" alt="Google">
+            <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQgMhgB-GccVnB-ZJFuZg7HUsmdifnuxStqmA&s" class="oauth-icon" alt="Google">
             Sign in with Google
           </button>
           <button class="oauth-btn" id="githubBtn">
-            <img src="https://www.svgrepo.com/show/475654/github-color.svg" class="oauth-icon" alt="GitHub">
+            <img src="https://images.icon-icons.com/3685/PNG/512/github_logo_icon_229278.png" class="oauth-icon" alt="GitHub">
             Sign in with GitHub
           </button>
         </div>
@@ -97,6 +140,8 @@ function renderLogin() {
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
     const errorMsg = document.getElementById('errorMsg');
+
+
 
     btn.disabled = true;
     btn.textContent = 'Loading...';
@@ -188,6 +233,17 @@ function renderEditor() {
 
   app.innerHTML = `
     <div class="editor-layout">
+      <!-- Beta Top Bar -->
+      <div id="betaBar" style="background: #18181b; color: white; padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <span style="background: #3b82f6; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: bold;">BETA</span>
+            <span>ProEdit is currently in beta. We appreciate your feedback!</span>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <button id="betaFeedback" style="background: transparent; color: white; border: 1px solid #3f3f46; padding: 0.25rem 0.75rem; border-radius: 0.25rem; cursor: pointer;">Give Feedback</button>
+            <button id="closeBeta" style="background: transparent; border: none; color: #a1a1aa; cursor: pointer; font-size: 1.2rem;">×</button>
+        </div>
+      </div>
       <!-- Top Bar: Menu + Toolbar -->
       <div class="top-bar">
         <div class="menu-bar">
@@ -324,12 +380,12 @@ function renderEditor() {
       </div>
 
       <!-- AI Chat Popup -->
-      <div class="ai-popup" id="aiPopup">
-        <div class="ai-header">
-          <div class="ai-title">AI Assistant</div>
+      <div class="ai-popup" id="aiPopup" style="display: none;">
+        <div class="ai-header" id="aiHeader" style="cursor: move;">
+          <div class="ai-title"><i class="iconoir-sparks"></i> AI Assistant</div>
           <div class="ai-controls">
-            <button class="ai-btn-icon" id="expandAi" title="Expand">⤢</button>
-            <button class="ai-btn-icon" id="closeAi" title="Close">×</button>
+            <button class="ai-btn-icon" id="expandAi" title="Expand"><i class="iconoir-expand"></i></button>
+            <button class="ai-btn-icon" id="closeAi" title="Close"><i class="iconoir-xmark-circle"></i></button>
           </div>
         </div>
         <div class="ai-messages" id="aiMessages">
@@ -337,13 +393,51 @@ function renderEditor() {
         </div>
         <div class="ai-input-area">
           <input type="text" class="ai-input" id="aiInput" placeholder="Ask AI to write, edit, or summarize...">
-          <button class="ai-send" id="aiSend">➤</button>
+          <button class="ai-send" id="aiSend"><i class="iconoir-send"></i></button>
+        </div>
+      </div>
+
+      <!-- Feedback Modal -->
+      <div class="modal-overlay" id="feedbackModal" style="display: none;">
+        <div class="modal-card">
+          <div class="modal-header">
+            <h3>Send Feedback</h3>
+            <button class="close-btn" id="closeFeedback">×</button>
+          </div>
+          <div class="modal-body">
+            <form id="feedbackForm">
+              <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="fbName" class="form-input" required>
+              </div>
+              <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="fbEmail" class="form-input" required>
+              </div>
+              <div class="form-group">
+                <label>Rating</label>
+                <div class="rating-input">
+                  <input type="radio" name="rating" value="5" id="r5"><label for="r5">★</label>
+                  <input type="radio" name="rating" value="4" id="r4"><label for="r4">★</label>
+                  <input type="radio" name="rating" value="3" id="r3"><label for="r3">★</label>
+                  <input type="radio" name="rating" value="2" id="r2"><label for="r2">★</label>
+                  <input type="radio" name="rating" value="1" id="r1"><label for="r1">★</label>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>Message</label>
+                <textarea id="fbMessage" class="form-input" rows="4" required></textarea>
+              </div>
+              <button type="submit" class="primary-btn" style="width: 100%; margin-top: 1rem;">Submit Feedback</button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
   `;
 
   setupEditorListeners();
+  setupBetaBar();
 
   // Page Break Listener
   document.getElementById('pageBreakBtn').addEventListener('click', () => {
@@ -414,11 +508,17 @@ function setupEditorListeners() {
   const backBtn = document.getElementById('backBtn');
   const slashMenu = document.getElementById('slashMenu');
   const aiPopup = document.getElementById('aiPopup');
+  const aiHeader = document.getElementById('aiHeader');
   const closeAi = document.getElementById('closeAi');
   const expandAi = document.getElementById('expandAi');
   const aiTrigger = document.getElementById('aiTrigger');
   const aiInput = document.getElementById('aiInput');
   const aiSend = document.getElementById('aiSend');
+
+  // Feedback Elements
+  const feedbackModal = document.getElementById('feedbackModal');
+  const closeFeedback = document.getElementById('closeFeedback');
+  const feedbackForm = document.getElementById('feedbackForm');
 
   // Track selection for Contextual Editing
   document.addEventListener('selectionchange', () => {
@@ -504,11 +604,61 @@ function setupEditorListeners() {
     }
   });
 
-  closeAi.addEventListener('click', () => {
-    aiPopup.classList.remove('visible');
+  // AI Panel Drag Logic
+  let isDragging = false;
+  let currentX;
+  let currentY;
+  let initialX;
+  let initialY;
+  let xOffset = 0;
+  let yOffset = 0;
+
+  aiHeader.addEventListener("mousedown", dragStart);
+  document.addEventListener("mouseup", dragEnd);
+  document.addEventListener("mousemove", drag);
+
+  function dragStart(e) {
+    if (e.target.closest('.ai-controls')) return; // Don't drag if clicking controls
+    initialX = e.clientX - xOffset;
+    initialY = e.clientY - yOffset;
+
+    if (e.target === aiHeader || aiHeader.contains(e.target)) {
+      isDragging = true;
+    }
+  }
+
+  function dragEnd(e) {
+    initialX = currentX;
+    initialY = currentY;
+    isDragging = false;
+  }
+
+  function drag(e) {
+    if (isDragging) {
+      e.preventDefault();
+      currentX = e.clientX - initialX;
+      currentY = e.clientY - initialY;
+
+      xOffset = currentX;
+      yOffset = currentY;
+
+      setTranslate(currentX, currentY, aiPopup);
+    }
+  }
+
+  function setTranslate(xPos, yPos, el) {
+    el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+  }
+
+  closeAi.addEventListener('click', (e) => {
+    e.stopPropagation(); // Stop event bubbling
+    aiPopup.style.display = 'none';
     aiPopup.classList.remove('split-view');
     document.querySelector('.editor-layout').classList.remove('has-sidebar');
-    expandAi.textContent = '⤢';
+    // Reset position
+    aiPopup.style.transform = 'none';
+    xOffset = 0;
+    yOffset = 0;
   });
 
   expandAi.addEventListener('click', () => {
@@ -625,6 +775,73 @@ function setupEditorListeners() {
       } else if (e.key === 'Escape') {
         hideSlashMenu();
       }
+    }
+  });
+
+  // Feedback Logic
+  closeFeedback.addEventListener('click', () => {
+    feedbackModal.style.display = 'none';
+  });
+
+  feedbackModal.addEventListener('click', (e) => {
+    if (e.target === feedbackModal) {
+      feedbackModal.style.display = 'none';
+    }
+  });
+
+  feedbackForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = feedbackForm.querySelector('button[type="submit"]');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    const name = document.getElementById('fbName').value;
+    const email = document.getElementById('fbEmail').value;
+    const message = document.getElementById('fbMessage').value;
+    const ratingEl = document.querySelector('input[name="rating"]:checked');
+    const rating = ratingEl ? parseInt(ratingEl.value) : 5;
+
+    const { error } = await submitFeedback(name, email, rating, message);
+
+    if (error) {
+      alert('Failed to send feedback: ' + error.message);
+      btn.disabled = false;
+      btn.textContent = originalText;
+    } else {
+      alert('Thank you for your feedback!');
+      feedbackModal.style.display = 'none';
+      feedbackForm.reset();
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+}
+
+
+
+function setupBetaBar() {
+  const betaBar = document.getElementById('betaBar');
+  const closeBeta = document.getElementById('closeBeta');
+  const betaFeedback = document.getElementById('betaFeedback');
+  const feedbackModal = document.getElementById('feedbackModal');
+
+  if (!betaBar) return; // Guard clause
+
+  // Check if previously closed
+  if (sessionStorage.getItem('betaBarClosed') === 'true') {
+    betaBar.style.display = 'none';
+  }
+
+  closeBeta.addEventListener('click', () => {
+    betaBar.style.display = 'none';
+    sessionStorage.setItem('betaBarClosed', 'true');
+  });
+
+  betaFeedback.addEventListener('click', () => {
+    feedbackModal.style.display = 'flex';
+    if (user && user.email) {
+      document.getElementById('fbEmail').value = user.email;
     }
   });
 }
@@ -901,25 +1118,4 @@ function showAiPopup(content, isLoading = false) {
 // Start App
 init();
 
-function renderLanding() {
-  window.renderLogin = renderLogin; // Ensure global access
-  app.innerHTML = `
-    <div class="landing-container">
-      <nav class="landing-nav">
-        <div class="brand">ProEdit</div>
-        <button class="auth-btn" style="width: auto; padding: 0.5rem 1.5rem;" onclick="renderLogin()">Sign In</button>
-      </nav>
-      
-      <main class="landing-hero">
-        <h1 class="hero-title">Write Smarter, Not Harder</h1>
-        <p class="hero-subtitle">The intelligent writing assistant that helps you create, edit, and format your documents with the power of AI.</p>
-        <button class="cta-btn" onclick="renderLogin()">Start Writing for Free</button>
-      </main>
-      
-      
-      <footer class="landing-footer">
-        &copy; 2025 ProEdit. All rights reserved.
-      </footer>
-    </div>
-  `;
-}
+

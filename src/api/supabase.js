@@ -40,3 +40,13 @@ export async function getUser() {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.user || null;
 }
+
+export async function submitFeedback(name, email, rating, message) {
+    const { data, error } = await supabase
+        .from('proedit_feedback')
+        .insert([
+            { name, email, rating, message }
+        ]);
+    return { data, error };
+}
+
