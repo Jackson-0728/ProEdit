@@ -2,7 +2,7 @@
 
 ProEdit is a modern, AI-powered text editor designed for professionals. It combines a distraction-free writing environment with advanced AI capabilities to help you write faster, edit smarter, and create content that stands out.
 
-![ProEdit Screenshot](https://app-proedit.vercel.app/ProEdit%20Screenshot.png)
+![ProEdit Screenshot](https://github.com/Jackson-0728/ProEdit/blob/main/ProEdit%20Screenshot.png?raw=true)
 
 ## Features
 
