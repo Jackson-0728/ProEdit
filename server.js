@@ -52,6 +52,6 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Backend server running on http://localhost:${PORT}`);
-    console.log(`✅ Gemini API configured`);
+    console.log(`Backend server running on http://localhost:${PORT}`);
+    console.log(`Gemini API configured`);
 });
