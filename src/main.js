@@ -1,6 +1,7 @@
 import './style.css';
 import { generateContent } from './api/gemini.js';
-import { supabase, signIn, signUp, signInWithProvider, signOut, getUser, submitFeedback } from './api/supabase.js';
+import { supabase, signIn, signUp, signInWithProvider, signOut, getUser, submitFeedback, getDocuments, getPublicDocument, createDocument, updateDocument, deleteDocument } from './api/supabase.js';
+
 
 // State
 let documents = [];
@@ -16,12 +17,30 @@ window.renderLogin = renderLogin; // Expose to global scope for inline onclick h
 
 
 async function init() {
+  // Check for public document view first
+  const urlParams = new URLSearchParams(window.location.search);
+  const publicDocId = urlParams.get('doc');
+
+  if (publicDocId) {
+    await loadPublicDocument(publicDocId);
+    return;
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
   user = session?.user;
 
   if (user) {
-    loadDocs();
-    renderDashboard();
+    await migrateLocalDocsToSupabase();
+    await loadDocs();
+
+    // Check if tutorial should be shown
+    const tutorialCompleted = localStorage.getItem('proedit_tutorial_completed');
+    if (!tutorialCompleted) {
+      renderDashboard();
+      setTimeout(() => startTutorial(), 500);
+    } else {
+      renderDashboard();
+    }
   } else {
     renderLanding();
   }
@@ -36,6 +55,7 @@ async function init() {
     }
   });
 }
+
 
 // --- VIEWS ---
 
@@ -251,7 +271,11 @@ function renderEditor() {
             <input type="text" class="doc-title-input" id="docTitle" value="${doc.title || 'Untitled Document'}" placeholder="Untitled Document">
           </div>
           <div style="flex: 1"></div>
-          <div style="display: flex; gap: 1rem; align-items: center;">
+          <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="deploy-btn ${doc.is_public ? 'published' : ''}" id="deployBtn" title="Deploy to Web">
+              <i class="iconoir-rocket"></i>
+              <span id="deployText">${doc.is_public ? 'Published' : 'Deploy'}</span>
+            </button>
             <button class="tool-btn" id="backBtn" title="Back to Dashboard">
               <i class="iconoir-arrow-left"></i>
             </button>
@@ -326,6 +350,12 @@ function renderEditor() {
             </button>
             <button class="tool-btn" data-cmd="insertOrderedList" title="Numbered List">
               <i class="iconoir-numbered-list-left"></i>
+            </button>
+          </div>
+
+          <div class="toolbar-group">
+            <button class="tool-btn" id="pageBreakBtn" title="Insert Page Break">
+              <i class="iconoir-page-search"></i>
             </button>
           </div>
 
@@ -433,6 +463,59 @@ function renderEditor() {
           </div>
         </div>
       </div>
+
+      <!-- Help Button & Panel -->
+      <button class="help-trigger" id="helpTrigger" title="Help">
+        <i class="iconoir-help-circle"></i>
+        <span>Help</span>
+      </button>
+
+      <div class="help-panel" id="helpPanel" style="display: none;">
+        <div class="help-panel-header">
+          <h3>Need Help?</h3>
+          <button class="close-btn" id="closeHelp">×</button>
+        </div>
+        <div class="help-panel-body">
+          <button class="help-option" id="openAiChatBtn">
+            <i class="iconoir-sparks"></i>
+            <div>
+              <div class="help-option-title">Ask AI Assistant</div>
+              <div class="help-option-desc">Get help with how to use ProEdit</div>
+            </div>
+          </button>
+          <button class="help-option" id="restartTutorialBtn">
+            <i class="iconoir-graduation-cap"></i>
+            <div>
+              <div class="help-option-title">Restart Tutorial</div>
+              <div class="help-option-desc">Take the guided tour again</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Help Chat Popup -->
+      <div class="help-chat-popup" id="helpChatPopup">
+        <div class="help-chat-header" id="helpChatHeader">
+          <div class="help-chat-title">
+            <i class="iconoir-sparks"></i>
+            <span>ProEdit Assistant</span>
+          </div>
+          <div class="ai-controls">
+            <button class="ai-btn-icon" id="closeHelpChat">×</button>
+          </div>
+        </div>
+        <div class="help-chat-messages" id="helpChatMessages">
+          <div class="ai-message ai">
+            Hello! I'm your ProEdit guide. Ask me anything about using the editor, formatting, or deploying your documents.
+          </div>
+        </div>
+        <div class="help-chat-input-area">
+          <input type="text" class="ai-input" id="helpChatInput" placeholder="How do I...">
+          <button class="help-chat-send" id="helpChatSend">
+            <i class="iconoir-send"></i>
+          </button>
+        </div>
+      </div>
     </div>
   `;
 
@@ -448,16 +531,22 @@ function renderEditor() {
 
 // --- ACTIONS ---
 
-function createNewDoc() {
+async function createNewDoc() {
   const newDoc = {
     id: Date.now().toString(),
+    user_id: user.id,
     title: 'Untitled Document',
     content: '',
-    updatedAt: Date.now()
+    is_public: false
   };
-  documents.unshift(newDoc);
-  saveDocs();
-  openDoc(newDoc.id);
+  const { data, error } = await createDocument(newDoc);
+  if (error) {
+    console.error('Error creating document:', error);
+    alert('Failed to create document');
+    return;
+  }
+  documents.unshift(data);
+  openDoc(data.id);
 }
 
 function openDoc(id) {
@@ -467,34 +556,144 @@ function openDoc(id) {
 
 window.openDoc = openDoc;
 
-window.deleteDoc = (e, id) => {
+window.deleteDoc = async (e, id) => {
   e.stopPropagation();
   if (confirm('Are you sure you want to delete this document?')) {
+    const { error } = await deleteDocument(id);
+    if (error) {
+      console.error('Error deleting document:', error);
+      alert('Failed to delete document');
+      return;
+    }
     documents = documents.filter(d => d.id !== id);
-    saveDocs();
     renderDashboard();
   }
 };
 
-function loadDocs() {
+async function loadDocs() {
   if (!user) return;
-  const key = `proedit_docs_${user.id}`;
-  documents = JSON.parse(localStorage.getItem(key)) || [];
+  const { data, error } = await getDocuments();
+  if (error) {
+    console.error('Error loading documents:', error);
+    documents = [];
+    return;
+  }
+  documents = data || [];
 }
 
+// Keep for backward compatibility with migration
 function saveDocs() {
-  if (!user) return;
-  const key = `proedit_docs_${user.id}`;
-  localStorage.setItem(key, JSON.stringify(documents));
+  // Documents are now auto-saved to Supabase via updateCurrentDoc
+  // This function is kept empty for backward compatibility
 }
 
-function updateCurrentDoc(updates) {
+async function updateCurrentDoc(updates) {
   const index = documents.findIndex(d => d.id === currentDocId);
   if (index !== -1) {
-    documents[index] = { ...documents[index], ...updates, updatedAt: Date.now() };
-    saveDocs();
+    const updatedDoc = { ...documents[index], ...updates };
+    documents[index] = updatedDoc;
+
+    // Update in Supabase
+    const { error } = await updateDocument(currentDocId, updates);
+    if (error) {
+      console.error('Error updating document:', error);
+    }
   }
 }
+
+// --- MIGRATION & PUBLIC DOCS ---
+
+async function migrateLocalDocsToSupabase() {
+  if (!user) return;
+
+  const migrationKey = `proedit_migrated_${user.id}`;
+  const migrated = localStorage.getItem(migrationKey);
+
+  if (migrated) return; // Already migrated
+
+  const localKey = `proedit_docs_${user.id}`;
+  const localDocsStr = localStorage.getItem(localKey);
+
+  if (!localDocsStr) {
+    localStorage.setItem(migrationKey, 'true');
+    return;
+  }
+
+  const localDocs = JSON.parse(localDocsStr);
+
+  if (localDocs.length === 0) {
+    localStorage.setItem(migrationKey, 'true');
+    return;
+  }
+
+  console.log(`Migrating ${localDocs.length} documents to Supabase...`);
+
+  for (const doc of localDocs) {
+    const docToMigrate = {
+      id: doc.id,
+      user_id: user.id,
+      title: doc.title || 'Untitled Document',
+      content: doc.content || '',
+      is_public: false,
+      created_at: doc.createdAt ? new Date(doc.createdAt).toISOString() : new Date().toISOString(),
+      updated_at: doc.updatedAt ? new Date(doc.updatedAt).toISOString() : new Date().toISOString()
+    };
+
+    await createDocument(docToMigrate);
+  }
+
+  localStorage.setItem(migrationKey, 'true');
+  console.log('Migration complete!');
+}
+
+async function loadPublicDocument(docId) {
+  const { data, error } = await getPublicDocument(docId);
+
+  if (error || !data) {
+    app.innerHTML = `
+      <div class="error-page">
+        <h1>Document Not Found</h1>
+        <p>This document doesn't exist or is not publicly shared.</p>
+        <button class="cta-btn" onclick="window.location.href='${window.location.origin}'">Go to ProEdit</button>
+      </div>
+    `;
+    return;
+  }
+
+  // Render read-only view
+  documents = [data];
+  currentDocId = data.id;
+  renderPublicEditor();
+}
+
+function renderPublicEditor() {
+  const doc = documents.find(d => d.id === currentDocId);
+  if (!doc) return;
+
+  app.innerHTML = `
+    <div class="editor-layout">
+      <div class="top-bar">
+        <div class="menu-bar">
+          <div class="doc-info">
+            <div class="doc-title-input" style="border: none; background: transparent;">${doc.title || 'Untitled Document'}</div>
+          </div>
+          <div style="flex: 1"></div>
+          <div style="display: flex; gap: 1rem; align-items: center;">
+            <span style="font-size: 0.9rem; color: var(--text-muted);">📖 Read-Only View</span>
+            <button class="cta-btn" onclick="window.location.href='${window.location.origin}'">Sign in to Edit</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="editor-scroll-container">
+        <div id="editor" contenteditable="false" spellcheck="false">
+          ${doc.content}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 
 // --- AI CHAT & EDITING ---
 
@@ -539,6 +738,42 @@ function setupEditorListeners() {
   backBtn.addEventListener('click', () => {
     currentDocId = null;
     renderDashboard();
+  });
+
+  // Deploy button
+  const deployBtn = document.getElementById('deployBtn');
+  deployBtn.addEventListener('click', async () => {
+    const doc = documents.find(d => d.id === currentDocId);
+    if (!doc) return;
+
+    const newPublicStatus = !doc.is_public;
+
+    // Update in Supabase
+    const { error } = await updateDocument(currentDocId, { is_public: newPublicStatus });
+    if (error) {
+      console.error('Error updating public status:', error);
+      alert('Failed to update deployment status');
+      return;
+    }
+
+    // Update local state
+    doc.is_public = newPublicStatus;
+    const index = documents.findIndex(d => d.id === currentDocId);
+    if (index !== -1) {
+      documents[index] = doc;
+    }
+
+    // Update button UI
+    deployBtn.classList.toggle('published', newPublicStatus);
+    document.getElementById('deployText').textContent = newPublicStatus ? 'Published' : 'Deploy';
+
+    // Show appropriate message
+    if (newPublicStatus) {
+      const shareUrl = `${window.location.origin}?doc=${currentDocId}`;
+      prompt('Document is now public! Share this URL:', shareUrl);
+    } else {
+      alert('Document is now private');
+    }
   });
 
   docTitle.addEventListener('input', (e) => {
@@ -798,22 +1033,134 @@ function setupEditorListeners() {
 
     const name = document.getElementById('fbName').value;
     const email = document.getElementById('fbEmail').value;
+    const rating = document.querySelector('input[name="rating"]:checked')?.value;
     const message = document.getElementById('fbMessage').value;
-    const ratingEl = document.querySelector('input[name="rating"]:checked');
-    const rating = ratingEl ? parseInt(ratingEl.value) : 5;
 
     const { error } = await submitFeedback(name, email, rating, message);
 
     if (error) {
-      alert('Failed to send feedback: ' + error.message);
-      btn.disabled = false;
-      btn.textContent = originalText;
+      alert('Failed to submit feedback. Please try again.');
+      console.error(error);
     } else {
       alert('Thank you for your feedback!');
       feedbackModal.style.display = 'none';
       feedbackForm.reset();
-      btn.disabled = false;
-      btn.textContent = originalText;
+    }
+
+    btn.disabled = false;
+    btn.textContent = originalText;
+  });
+
+  // Help Panel Logic
+  const helpTrigger = document.getElementById('helpTrigger');
+  const helpPanel = document.getElementById('helpPanel');
+  const closeHelp = document.getElementById('closeHelp');
+  const openAiChatBtn = document.getElementById('openAiChatBtn');
+  const restartTutorialBtn = document.getElementById('restartTutorialBtn');
+
+  helpTrigger.addEventListener('click', () => {
+    helpPanel.style.display = helpPanel.style.display === 'none' ? 'block' : 'none';
+  });
+
+  closeHelp.addEventListener('click', () => {
+    helpPanel.style.display = 'none';
+  });
+
+  // Help Chat Logic
+  const helpChatPopup = document.getElementById('helpChatPopup');
+  const closeHelpChat = document.getElementById('closeHelpChat');
+  const helpChatInput = document.getElementById('helpChatInput');
+  const helpChatSend = document.getElementById('helpChatSend');
+  const helpChatMessages = document.getElementById('helpChatMessages');
+
+  function addHelpMessage(text, type) {
+    const div = document.createElement('div');
+    div.className = `ai-message ${type}`;
+    div.textContent = text;
+    helpChatMessages.appendChild(div);
+    helpChatMessages.scrollTop = helpChatMessages.scrollHeight;
+  }
+
+  const handleHelpSend = async () => {
+    const text = helpChatInput.value.trim();
+    if (!text) return;
+
+    addHelpMessage(text, 'user');
+    helpChatInput.value = '';
+    helpChatInput.disabled = true;
+    helpChatSend.disabled = true;
+
+    // Add loading indicator
+    const loadingDiv = document.createElement('div');
+    loadingDiv.className = 'ai-message ai';
+    loadingDiv.textContent = 'Thinking...';
+    helpChatMessages.appendChild(loadingDiv);
+    helpChatMessages.scrollTop = helpChatMessages.scrollHeight;
+
+    try {
+      const systemPrompt = `You are a helpful assistant for the ProEdit document editor. 
+      Your goal is to help users understand how to use the application.
+      
+      Key Features of ProEdit:
+      - **Editor**: A rich text editor for writing documents.
+      - **Formatting**: Users can format text using the toolbar (Bold, Italic, Underline, Fonts, Colors).
+      - **AI Assistant**: Users can ask the AI to write, edit, or improve text.
+      - **Deploy to Web**: Users can publish documents to a public URL.
+      - **Export**: Users can export to PDF, Word, or Markdown.
+      
+      Answer the user's question about how to use these features. Keep answers concise and helpful.
+      Do not try to edit the document content directly. Just explain how to do it.`;
+
+      const prompt = `${systemPrompt}\n\nUser Question: ${text}`;
+      const response = await generateContent(prompt);
+
+      loadingDiv.remove();
+      addHelpMessage(response, 'ai');
+    } catch (error) {
+      console.error('Help Chat Error:', error);
+      loadingDiv.remove();
+      addHelpMessage('Sorry, I encountered an error. Please try again.', 'ai');
+    } finally {
+      helpChatInput.disabled = false;
+      helpChatSend.disabled = false;
+      helpChatInput.focus();
+    }
+  };
+
+  helpChatSend.addEventListener('click', handleHelpSend);
+  helpChatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') handleHelpSend();
+  });
+
+  closeHelpChat.addEventListener('click', () => {
+    helpChatPopup.classList.remove('visible');
+    setTimeout(() => {
+      helpChatPopup.style.display = 'none';
+    }, 300);
+  });
+
+  // Update Open AI Chat button to open Help Chat instead
+  openAiChatBtn.addEventListener('click', () => {
+    helpPanel.style.display = 'none';
+    helpChatPopup.style.display = 'flex';
+    // Small delay to allow display:flex to apply before adding visible class for animation
+    setTimeout(() => {
+      helpChatPopup.classList.add('visible');
+      helpChatInput.focus();
+    }, 10);
+  });
+
+  restartTutorialBtn.addEventListener('click', () => {
+    helpPanel.style.display = 'none';
+    localStorage.removeItem('proedit_tutorial_completed');
+    currentTutorialStep = 0;
+    startTutorial();
+  });
+
+  // Close help panel when clicking outside
+  document.addEventListener('click', (e) => {
+    if (!helpPanel.contains(e.target) && !helpTrigger.contains(e.target)) {
+      helpPanel.style.display = 'none';
     }
   });
 }
@@ -1119,3 +1466,224 @@ function showAiPopup(content, isLoading = false) {
 init();
 
 
+// --- TUTORIAL SYSTEM ---
+
+let currentTutorialStep = 0;
+let tutorialDemoDocId = null;
+
+const tutorialSteps = [
+  {
+    target: '.create-btn',
+    title: 'Welcome to ProEdit! 👋',
+    content: 'Let\'s take a quick tour to help you get started. First, click the "+ New Document" button to create your first document.',
+    action: null
+  },
+  {
+    target: '#editor',
+    title: 'Meet the Editor ✏️',
+    content: 'This is your canvas! Start typing to create beautiful documents. The editor supports rich text and auto-saving.',
+    action: null
+  },
+  {
+    target: '.toolbar',
+    title: 'Formatting Tools 🎨',
+    content: 'Use the toolbar to style your text. You can change fonts, adjust sizes, add colors, and apply bold or italic styles to make your document pop.',
+    action: null
+  },
+  {
+    target: '.ai-trigger',
+    title: 'AI Assistant 🤖',
+    content: 'Click this button to open your AI assistant. It can help you write, edit, and improve your content. Try asking it to "continue writing" or "fix grammar"!',
+    action: null
+  },
+  {
+    target: '#deployBtn',
+    title: 'Deploy to Web 🚀',
+    content: 'Share your work with the world! Click "Deploy" to make your document public and get a shareable link. Perfect for portfolios, blogs, or sharing ideas.',
+    action: null
+  },
+  {
+    target: '.dropdown',
+    title: 'Export & More 📥',
+    content: 'Export your documents as PDF, Word, or Markdown. ProEdit makes it easy to take your work anywhere!',
+    action: 'complete'
+  }
+];
+
+function startTutorial() {
+  currentTutorialStep = 0;
+
+  // Add tutorial overlay to body
+  if (!document.getElementById('tutorialOverlay')) {
+    const overlay = document.createElement('div');
+    overlay.className = 'tutorial-overlay';
+    overlay.id = 'tutorialOverlay';
+    overlay.innerHTML = `
+      <div class="tutorial-spotlight" id="tutorialSpotlight"></div>
+      <div class="tutorial-card" id="tutorialCard">
+        <div class="tutorial-header">
+          <h3 id="tutorialTitle"></h3>
+          <button class="tutorial-close" id="tutorialCloseBtn">×</button>
+        </div>
+        <div class="tutorial-content" id="tutorialContent"></div>
+        <div class="tutorial-controls">
+          <button class="tutorial-skip" id="tutorialSkip">Skip Tutorial</button>
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <span class="tutorial-progress" id="tutorialProgress"></span>
+            <button class="tutorial-next" id="tutorialNext">Next</button>
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    // Event listeners
+    document.getElementById('tutorialNext').addEventListener('click', nextTutorialStep);
+    document.getElementById('tutorialSkip').addEventListener('click', endTutorial);
+    document.getElementById('tutorialCloseBtn').addEventListener('click', endTutorial);
+  }
+
+  showTutorialStep();
+}
+
+function showTutorialStep() {
+  if (currentTutorialStep >= tutorialSteps.length) {
+    endTutorial();
+    return;
+  }
+
+  const step = tutorialSteps[currentTutorialStep];
+  const overlay = document.getElementById('tutorialOverlay');
+  const spotlight = document.getElementById('tutorialSpotlight');
+  const card = document.getElementById('tutorialCard');
+
+  overlay.style.display = 'block';
+
+  // Update content
+  document.getElementById('tutorialTitle').textContent = step.title;
+  document.getElementById('tutorialContent').textContent = step.content;
+  document.getElementById('tutorialProgress').textContent = `${currentTutorialStep + 1} of ${tutorialSteps.length}`;
+
+  // Update button text for last step
+  const nextBtn = document.getElementById('tutorialNext');
+  nextBtn.textContent = currentTutorialStep === tutorialSteps.length - 1 ? 'Finish' : 'Next';
+
+  // Position spotlight and card
+  const targetEl = document.querySelector(step.target);
+  if (targetEl) {
+    const rect = targetEl.getBoundingClientRect();
+
+    // Position spotlight
+    spotlight.style.top = `${rect.top - 10}px`;
+    spotlight.style.left = `${rect.left - 10}px`;
+    spotlight.style.width = `${rect.width + 20}px`;
+    spotlight.style.height = `${rect.height + 20}px`;
+
+    // Position card
+    let cardTop = rect.bottom + 20;
+    let cardLeft = rect.left;
+
+    // Adjust if card goes off screen
+    if (cardTop + 300 > window.innerHeight) {
+      cardTop = rect.top - 320;
+    }
+    if (cardLeft + 380 > window.innerWidth) {
+      cardLeft = window.innerWidth - 400;
+    }
+    if (cardLeft < 20) {
+      cardLeft = 20;
+    }
+
+    card.style.top = `${cardTop}px`;
+    card.style.left = `${cardLeft}px`;
+  }
+
+  // Handle special actions for certain steps
+  if (step.action === 'create-doc' && currentTutorialStep === 0) {
+    // Wait for user to create doc, then auto-proceed
+    const createBtn = document.querySelector('.create-btn');
+    const originalOnClick = createBtn.onclick;
+    createBtn.onclick = async function () {
+      await createDemoDocument();
+      setTimeout(() => nextTutorialStep(), 1000);
+    };
+  }
+}
+
+async function createDemoDocument() {
+  const demoContent = `
+    <h1 style="font-size: 36px; font-family: 'Playfair Display', serif; margin-bottom: 0.5rem;">Meet <strong>ProEdit</strong>, the AI text editor that can...</h1>
+    
+    <p style="font-family: 'Courier Prime', monospace; margin: 1rem 0; color: #666;">learn your unique style.</p>
+    
+    <p style="margin: 1rem 0;"><em>transform raw ideas into polished prose.</em></p>
+    
+    <p style="margin: 1rem 0;"><em>accelerate your workflow, and boost your creativity.</em></p>
+    
+    <h2 style="font-size: 28px; font-family: 'Playfair Display', serif; margin: 2rem 0 1rem 0;">From emails to epic narratives, perfected instantly.</h2>
+  `;
+
+  const newDoc = {
+    id: Date.now().toString(),
+    user_id: user.id,
+    title: 'Meet ProEdit',
+    content: demoContent,
+    is_public: false
+  };
+
+  const { data, error } = await createDocument(newDoc);
+  if (!error && data) {
+    documents.unshift(data);
+    tutorialDemoDocId = data.id;
+    currentDocId = data.id;
+    renderEditor();
+  }
+}
+
+function nextTutorialStep() {
+  // Handle step-specific actions
+  const currentStep = tutorialSteps[currentTutorialStep];
+
+  if (currentStep.action === 'complete') {
+    endTutorial();
+    return;
+  }
+
+  // Special handling for first step - create demo doc
+  if (currentTutorialStep === 0) {
+    // Hide overlay temporarily while document loads
+    document.getElementById('tutorialOverlay').style.display = 'none';
+
+    createDemoDocument().then(() => {
+      currentTutorialStep++;
+      // Wait for editor to render, then show next step
+      // Use polling to ensure overlay is found and shown
+      let attempts = 0;
+      const interval = setInterval(() => {
+        const overlay = document.getElementById('tutorialOverlay');
+        if (overlay) {
+          overlay.style.display = 'block';
+          showTutorialStep();
+          clearInterval(interval);
+        }
+        attempts++;
+        if (attempts > 20) clearInterval(interval); // Stop after 2 seconds
+      }, 100);
+    });
+    return;
+  }
+
+  currentTutorialStep++;
+  showTutorialStep();
+}
+
+function endTutorial() {
+  const overlay = document.getElementById('tutorialOverlay');
+  if (overlay) {
+    overlay.style.display = 'none';
+  }
+  localStorage.setItem('proedit_tutorial_completed', 'true');
+}
+
+window.startTutorial = startTutorial;
+window.endTutorial = endTutorial; // Expose for help button

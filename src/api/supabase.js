@@ -50,3 +50,50 @@ export async function submitFeedback(name, email, rating, message) {
     return { data, error };
 }
 
+// --- DOCUMENT CRUD OPERATIONS ---
+
+export async function getDocuments() {
+    const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .order('updated_at', { ascending: false });
+    return { data, error };
+}
+
+export async function getPublicDocument(id) {
+    const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .eq('id', id)
+        .eq('is_public', true)
+        .single();
+    return { data, error };
+}
+
+export async function createDocument(doc) {
+    const { data, error } = await supabase
+        .from('documents')
+        .insert([doc])
+        .select()
+        .single();
+    return { data, error };
+}
+
+export async function updateDocument(id, updates) {
+    const { data, error } = await supabase
+        .from('documents')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+    return { data, error };
+}
+
+export async function deleteDocument(id) {
+    const { error } = await supabase
+        .from('documents')
+        .delete()
+        .eq('id', id);
+    return { error };
+}
+
