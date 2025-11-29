@@ -1,5 +1,5 @@
 import './style.css';
-import { generateContent } from './api/gemini.js';
+import { generateContent, evaluateModels } from './api/gemini.js';
 import { supabase, signIn, signUp, signInWithProvider, signOut, getUser, submitFeedback, getDocuments, getPublicDocument, createDocument, updateDocument, deleteDocument } from './api/supabase.js';
 
 
@@ -412,6 +412,11 @@ function renderEditor() {
         <div class="ai-header" id="aiHeader" style="cursor: move;">
           <div class="ai-title"><i class="iconoir-sparks"></i> AI Assistant</div>
           <div class="ai-controls">
+            <select class="model-selector" id="aiModelSelector" title="Select AI Model">
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            </select>
             <button class="ai-btn-icon" id="expandAi" title="Expand"><i class="iconoir-expand"></i></button>
             <button class="ai-btn-icon" id="closeAi" title="Close"><i class="iconoir-xmark-circle"></i></button>
           </div>
@@ -434,12 +439,73 @@ function renderEditor() {
           </div>
           <div class="modal-body">
             <p class="prostyle-subtitle">Describe the component you want and ProStyle will drop clean HTML into your doc.</p>
+            <div class="form-group">
+              <label>AI Model</label>
+              <select class="model-selector" id="proStyleModelSelector" style="width: 100%;">
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              </select>
+            </div>
             <textarea id="proStylePrompt" class="form-input" rows="3" placeholder="e.g., A two-column hero with headline, bullet list, and CTA button"></textarea>
             <div class="prostyle-footer">
               <div id="proStyleStatus" class="prostyle-status" style="display: none;"></div>
               <div class="prostyle-actions">
                 <button class="ghost-btn" id="cancelProStyle" type="button">Cancel</button>
                 <button class="primary-btn" id="runProStyle" type="button">Generate & Insert</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Evaluation Modal -->
+      <div class="modal-overlay" id="evalModal" style="display: none;">
+        <div class="modal-card eval-card">
+          <div class="modal-header">
+            <h3>Model Evaluation</h3>
+            <button class="close-btn" id="closeEval">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="eval-subtitle">Compare all 3 Gemini models side-by-side for speed and quality.</p>
+            <div class="form-group">
+              <textarea id="evalPrompt" class="form-input" rows="3" placeholder="Enter a prompt to test all models..."></textarea>
+            </div>
+            <div class="eval-actions">
+              <button class="primary-btn" id="runEval" type="button">Run Evaluation</button>
+            </div>
+            
+            <div class="eval-results" id="evalResults" style="display: none;">
+              <div class="eval-grid">
+                <!-- Flash -->
+                <div class="eval-col" id="col-flash">
+                  <div class="eval-col-header">
+                    <span class="model-name">Gemini 2.5 Flash</span>
+                    <span class="eval-metric time" id="time-flash">-</span>
+                  </div>
+                  <div class="eval-content" id="res-flash"></div>
+                  <div class="eval-meta" id="meta-flash"></div>
+                </div>
+                
+                <!-- Flash Lite -->
+                <div class="eval-col" id="col-lite">
+                  <div class="eval-col-header">
+                    <span class="model-name">Gemini 2.5 Flash Lite</span>
+                    <span class="eval-metric time" id="time-lite">-</span>
+                  </div>
+                  <div class="eval-content" id="res-lite"></div>
+                  <div class="eval-meta" id="meta-lite"></div>
+                </div>
+                
+                <!-- Pro -->
+                <div class="eval-col" id="col-pro">
+                  <div class="eval-col-header">
+                    <span class="model-name">Gemini 2.5 Pro</span>
+                    <span class="eval-metric time" id="time-pro">-</span>
+                  </div>
+                  <div class="eval-content" id="res-pro"></div>
+                  <div class="eval-meta" id="meta-pro"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -757,6 +823,30 @@ function setupEditorListeners() {
   const aiTrigger = document.getElementById('aiTrigger');
   const aiInput = document.getElementById('aiInput');
   const aiSend = document.getElementById('aiSend');
+
+  // Model selectors
+  const aiModelSelector = document.getElementById('aiModelSelector');
+  const proStyleModelSelector = document.getElementById('proStyleModelSelector');
+
+  // Load saved model preference or use default
+  const savedModel = localStorage.getItem('proedit_ai_model') || 'gemini-2.5-flash';
+  aiModelSelector.value = savedModel;
+  proStyleModelSelector.value = savedModel;
+
+  // Save model preference when changed
+  aiModelSelector.addEventListener('change', () => {
+    const selectedModel = aiModelSelector.value;
+    localStorage.setItem('proedit_ai_model', selectedModel);
+    // Sync with ProStyle selector
+    proStyleModelSelector.value = selectedModel;
+  });
+
+  proStyleModelSelector.addEventListener('change', () => {
+    const selectedModel = proStyleModelSelector.value;
+    localStorage.setItem('proedit_ai_model', selectedModel);
+    // Sync with AI chat selector
+    aiModelSelector.value = selectedModel;
+  });
   const proStyleBtn = document.getElementById('proStyleBtn');
   const proStyleModal = document.getElementById('proStyleModal');
   const closeProStyle = document.getElementById('closeProStyle');
@@ -765,6 +855,90 @@ function setupEditorListeners() {
   const proStylePrompt = document.getElementById('proStylePrompt');
   const proStyleStatus = document.getElementById('proStyleStatus');
   let savedProStyleRange = null;
+
+  // Evaluation Elements
+  const openEvalBtn = document.getElementById('openEvalBtn');
+  const evalModal = document.getElementById('evalModal');
+  const closeEval = document.getElementById('closeEval');
+  const runEval = document.getElementById('runEval');
+  const evalPrompt = document.getElementById('evalPrompt');
+  const evalResults = document.getElementById('evalResults');
+
+  // Evaluation Logic
+  if (openEvalBtn) {
+    openEvalBtn.addEventListener('click', () => {
+      evalModal.style.display = 'flex';
+      evalPrompt.focus();
+    });
+  }
+
+  if (closeEval) {
+    closeEval.addEventListener('click', () => {
+      evalModal.style.display = 'none';
+    });
+  }
+
+  if (runEval) {
+    runEval.addEventListener('click', async () => {
+      const prompt = evalPrompt.value.trim();
+      if (!prompt) return;
+
+      runEval.disabled = true;
+      runEval.textContent = 'Running Evaluation...';
+      evalResults.style.display = 'block';
+
+      // Reset UI
+      ['flash', 'lite', 'pro'].forEach(model => {
+        document.getElementById(`res-${model}`).innerHTML = '<div class="eval-loading">Thinking...</div>';
+        document.getElementById(`time-${model}`).textContent = '-';
+        document.getElementById(`meta-${model}`).textContent = '';
+        document.getElementById(`col-${model}`).classList.remove('fastest');
+      });
+
+      try {
+        const results = await evaluateModels(prompt);
+
+        // Find fastest successful model
+        let fastestTime = Infinity;
+        let fastestModel = null;
+
+        results.forEach(res => {
+          const modelKey = res.model.includes('lite') ? 'lite' : (res.model.includes('pro') ? 'pro' : 'flash');
+          const contentEl = document.getElementById(`res-${modelKey}`);
+          const timeEl = document.getElementById(`time-${modelKey}`);
+          const metaEl = document.getElementById(`meta-${modelKey}`);
+
+          if (res.status === 'success') {
+            // Format content
+            contentEl.innerHTML = res.text.replace(/\n/g, '<br>');
+            timeEl.textContent = `${(res.duration / 1000).toFixed(2)}s`;
+            metaEl.textContent = `${res.text.length} chars`;
+
+            if (res.duration < fastestTime) {
+              fastestTime = res.duration;
+              fastestModel = modelKey;
+            }
+          } else {
+            contentEl.innerHTML = `<div class="eval-error">Error: ${res.error}</div>`;
+            timeEl.textContent = 'Failed';
+          }
+        });
+
+        // Highlight fastest
+        if (fastestModel) {
+          document.getElementById(`col-${fastestModel}`).classList.add('fastest');
+          document.getElementById(`time-${fastestModel}`).textContent += ' ⚡';
+        }
+
+      } catch (error) {
+        console.error('Evaluation error:', error);
+        alert('Failed to run evaluation');
+      } finally {
+        runEval.disabled = false;
+        runEval.textContent = 'Run Evaluation';
+      }
+    });
+  }
 
   // Feedback Elements
   const feedbackModal = document.getElementById('feedbackModal');
@@ -933,7 +1107,8 @@ Rules:
 - Do not wrap in UPDATE_DOCUMENT/APPEND_CONTENT/etc.`;
 
       try {
-        const response = await generateContent(proStylePromptText);
+        const selectedModel = proStyleModelSelector.value;
+        const response = await generateContent(proStylePromptText, selectedModel);
         let html = response.trim();
 
         // Strip common wrappers the model might return
@@ -1138,7 +1313,8 @@ Rules:
     `;
 
     try {
-      const response = await generateContent(prompt);
+      const selectedModel = aiModelSelector.value;
+      const response = await generateContent(prompt, selectedModel);
 
       let processedResponse = response;
       let docUpdated = false;
@@ -1451,7 +1627,8 @@ Rules:
     if (editPopupSubmit) editPopupSubmit.disabled = true;
 
     try {
-      const response = await generateContent(prompt);
+      const selectedModel = aiModelSelector.value;
+      const response = await generateContent(prompt, selectedModel);
       const editedText = response.trim();
 
       // Restore the selection and replace the text
@@ -1578,13 +1755,34 @@ window.exportDoc = (format) => {
 
   if (format === 'pdf') {
     const element = document.getElementById('editor');
+
     const opt = {
-      margin: 1,
+      margin: [0.75, 0.75, 0.75, 0.75], // Top, Right, Bottom, Left margins in inches for centering
       filename: `${filename}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      image: {
+        type: 'jpeg',
+        quality: 0.98
+      },
+      html2canvas: {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 816, // Match editor width
+        windowHeight: element.scrollHeight
+      },
+      jsPDF: {
+        unit: 'in',
+        format: 'letter',
+        orientation: 'portrait',
+        compress: true
+      },
+      pagebreak: {
+        mode: ['avoid-all', 'css', 'legacy'],
+        before: '.page-break'
+      }
     };
+
     html2pdf().set(opt).from(element).save();
   } else if (format === 'word') {
     const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' " +
@@ -1798,7 +1996,8 @@ async function triggerSlashAction(action) {
 
   if (prompt) {
     try {
-      const response = await generateContent(prompt);
+      const selectedModel = aiModelSelector.value;
+      const response = await generateContent(prompt, selectedModel);
       addAiMessage(response);
 
       if (action === 'continue') {

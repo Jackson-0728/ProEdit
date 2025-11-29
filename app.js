@@ -24,15 +24,29 @@ if (!API_KEY) {
 
 // API endpoint
 app.post('/api/generate', async (req, res) => {
+    const startTime = Date.now();
     try {
         if (!API_KEY) {
             return res.status(500).json({ error: 'Server configuration error: API Key missing' });
         }
 
         const genAI = new GoogleGenerativeAI(API_KEY);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-        const { prompt } = req.body;
+        const { prompt, model: requestedModel } = req.body;
+
+        // Supported models
+        const supportedModels = [
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.5-pro'
+        ];
+
+        // Use requested model if valid, otherwise default to gemini-2.5-flash
+        const modelName = supportedModels.includes(requestedModel)
+            ? requestedModel
+            : 'gemini-2.5-flash';
+
+        const model = genAI.getGenerativeModel({ model: modelName });
 
         if (!prompt) {
             return res.status(400).json({ error: 'Prompt is required' });
@@ -41,12 +55,72 @@ app.post('/api/generate', async (req, res) => {
         const result = await model.generateContent(prompt);
         const response = await result.response;
         const text = response.text();
+        const duration = Date.now() - startTime;
 
-        res.json({ text });
+        res.json({ text, duration, model: modelName });
     } catch (error) {
         console.error('Error generating content:', error);
         res.status(500).json({
             error: 'Failed to generate content',
+            message: error.message,
+            duration: Date.now() - startTime
+        });
+    }
+});
+
+// Evaluation endpoint - runs all models concurrently
+app.post('/api/evaluate', async (req, res) => {
+    try {
+        if (!API_KEY) {
+            return res.status(500).json({ error: 'Server configuration error: API Key missing' });
+        }
+
+        const { prompt } = req.body;
+        if (!prompt) {
+            return res.status(400).json({ error: 'Prompt is required' });
+        }
+
+        const genAI = new GoogleGenerativeAI(API_KEY);
+        const models = [
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.5-pro'
+        ];
+
+        // Run all models concurrently
+        const promises = models.map(async (modelName) => {
+            const startTime = Date.now();
+            try {
+                const model = genAI.getGenerativeModel({ model: modelName });
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                const text = response.text();
+                const duration = Date.now() - startTime;
+
+                return {
+                    model: modelName,
+                    text,
+                    duration,
+                    status: 'success'
+                };
+            } catch (error) {
+                console.error(`Error with model ${modelName}:`, error);
+                return {
+                    model: modelName,
+                    error: error.message,
+                    duration: Date.now() - startTime,
+                    status: 'error'
+                };
+            }
+        });
+
+        const results = await Promise.all(promises);
+        res.json({ results });
+
+    } catch (error) {
+        console.error('Error in evaluation:', error);
+        res.status(500).json({
+            error: 'Failed to run evaluation',
             message: error.message
         });
     }
