@@ -541,6 +541,34 @@ function renderEditor() {
           </button>
         </div>
       </div>
+
+      <!-- Text Selection Edit Popup -->
+      <div class="text-edit-popup" id="textEditPopup">
+        <button class="edit-popup-btn" data-action="improve">
+          <i class="iconoir-sparks"></i>
+          <span>Improve</span>
+        </button>
+        <button class="edit-popup-btn" data-action="simplify">
+          <i class="iconoir-text"></i>
+          <span>Simplify</span>
+        </button>
+        <button class="edit-popup-btn" data-action="expand">
+          <i class="iconoir-plus-circle"></i>
+          <span>Expand</span>
+        </button>
+        <div class="edit-popup-divider"></div>
+        <button class="edit-popup-btn" data-action="custom">
+          <i class="iconoir-edit-pencil"></i>
+          <span>Custom Edit...</span>
+        </button>
+        <div class="edit-popup-custom" id="editPopupCustom">
+          <input type="text" class="edit-popup-input" id="editPopupInput" placeholder="Describe how to edit...">
+          <div class="edit-popup-actions">
+            <button class="edit-popup-cancel" id="editPopupCancel">Cancel</button>
+            <button class="edit-popup-submit" id="editPopupSubmit">Apply</button>
+          </div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -1340,6 +1368,163 @@ Rules:
   document.addEventListener('click', (e) => {
     if (!helpPanel.contains(e.target) && !helpTrigger.contains(e.target)) {
       helpPanel.style.display = 'none';
+    }
+  });
+
+  // --- TEXT SELECTION EDIT POPUP ---
+  const textEditPopup = document.getElementById('textEditPopup');
+  const editPopupCustom = document.getElementById('editPopupCustom');
+  const editPopupInput = document.getElementById('editPopupInput');
+  const editPopupCancel = document.getElementById('editPopupCancel');
+  const editPopupSubmit = document.getElementById('editPopupSubmit');
+  let selectedTextRange = null;
+  let selectedText = '';
+
+  // Show popup when text is selected
+  document.addEventListener('mouseup', (e) => {
+    // Don't show if clicking inside the popup itself
+    if (textEditPopup.contains(e.target)) return;
+
+    const selection = window.getSelection();
+    const text = selection.toString().trim();
+
+    if (text && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+
+      // Only show if selection is within the editor
+      if (editor.contains(range.commonAncestorContainer)) {
+        selectedText = text;
+        selectedTextRange = range.cloneRange();
+
+        // Position the popup near the selection
+        const rect = range.getBoundingClientRect();
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+        // Position above the selection
+        textEditPopup.style.top = `${rect.top + scrollTop - textEditPopup.offsetHeight - 10}px`;
+        textEditPopup.style.left = `${rect.left + scrollLeft}px`;
+
+        // Show the popup
+        textEditPopup.classList.add('visible');
+
+        // Hide custom input if it was open
+        editPopupCustom.classList.remove('visible');
+        editPopupInput.value = '';
+      }
+    } else {
+      // Hide popup if no text selected
+      textEditPopup.classList.remove('visible');
+      editPopupCustom.classList.remove('visible');
+    }
+  });
+
+  // Hide popup when clicking outside
+  document.addEventListener('mousedown', (e) => {
+    if (!textEditPopup.contains(e.target) && !editor.contains(e.target)) {
+      textEditPopup.classList.remove('visible');
+      editPopupCustom.classList.remove('visible');
+    }
+  });
+
+  // Handle edit actions
+  const handleEditAction = async (action, customPrompt = '') => {
+    if (!selectedText || !selectedTextRange) return;
+
+    let prompt = '';
+
+    switch (action) {
+      case 'improve':
+        prompt = `Improve the following text by fixing grammar, enhancing clarity, and making it more professional. Return ONLY the improved text, no explanations:\n\n"${selectedText}"`;
+        break;
+      case 'simplify':
+        prompt = `Simplify the following text to make it easier to understand. Use simpler words and shorter sentences. Return ONLY the simplified text, no explanations:\n\n"${selectedText}"`;
+        break;
+      case 'expand':
+        prompt = `Expand the following text with more details and context. Make it more comprehensive. Return ONLY the expanded text, no explanations:\n\n"${selectedText}"`;
+        break;
+      case 'custom':
+        if (!customPrompt) return;
+        prompt = `${customPrompt}\n\nOriginal text: "${selectedText}"\n\nReturn ONLY the edited text, no explanations.`;
+        break;
+    }
+
+    // Hide popup and show loading state
+    textEditPopup.classList.remove('visible');
+    editPopupCustom.classList.remove('visible');
+
+    // Disable submit button during processing
+    if (editPopupSubmit) editPopupSubmit.disabled = true;
+
+    try {
+      const response = await generateContent(prompt);
+      const editedText = response.trim();
+
+      // Restore the selection and replace the text
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(selectedTextRange);
+
+      // Replace the selected text
+      document.execCommand('insertText', false, editedText);
+
+      // Update document
+      updateCurrentDoc({ content: editor.innerHTML });
+
+      // Clear selection
+      selectedText = '';
+      selectedTextRange = null;
+    } catch (error) {
+      console.error('Edit error:', error);
+      alert('Failed to edit text. Please try again.');
+    } finally {
+      if (editPopupSubmit) editPopupSubmit.disabled = false;
+    }
+  };
+
+  // Quick action buttons
+  document.querySelectorAll('.edit-popup-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.action;
+
+      if (action === 'custom') {
+        // Show custom input
+        editPopupCustom.classList.add('visible');
+        editPopupInput.focus();
+      } else {
+        // Execute quick action
+        handleEditAction(action);
+      }
+    });
+  });
+
+  // Custom edit cancel
+  editPopupCancel.addEventListener('click', (e) => {
+    e.stopPropagation();
+    editPopupCustom.classList.remove('visible');
+    editPopupInput.value = '';
+  });
+
+  // Custom edit submit
+  editPopupSubmit.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const customPrompt = editPopupInput.value.trim();
+    if (customPrompt) {
+      handleEditAction('custom', customPrompt);
+      editPopupInput.value = '';
+    }
+  });
+
+  // Submit on Enter key
+  editPopupInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const customPrompt = editPopupInput.value.trim();
+      if (customPrompt) {
+        handleEditAction('custom', customPrompt);
+        editPopupInput.value = '';
+      }
     }
   });
 }
