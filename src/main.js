@@ -272,6 +272,10 @@ function renderEditor() {
           </div>
           <div style="flex: 1"></div>
           <div style="display: flex; gap: 0.5rem; align-items: center;">
+            <button class="prostyle-btn" id="proStyleBtn" title="Generate HTML components with AI">
+              <span class="prostyle-icon">AI</span>
+              <span>ProStyle</span>
+            </button>
             <button class="deploy-btn ${doc.is_public ? 'published' : ''}" id="deployBtn" title="Deploy to Web">
               <i class="iconoir-rocket"></i>
               <span id="deployText">${doc.is_public ? 'Published' : 'Deploy'}</span>
@@ -424,6 +428,27 @@ function renderEditor() {
         <div class="ai-input-area">
           <input type="text" class="ai-input" id="aiInput" placeholder="Ask AI to write, edit, or summarize...">
           <button class="ai-send" id="aiSend"><i class="iconoir-send"></i></button>
+        </div>
+      </div>
+
+      <!-- ProStyle Modal -->
+      <div class="modal-overlay" id="proStyleModal" style="display: none;">
+        <div class="modal-card prostyle-card">
+          <div class="modal-header">
+            <h3>ProStyle Component Builder</h3>
+            <button class="close-btn" id="closeProStyle">×</button>
+          </div>
+          <div class="modal-body">
+            <p class="prostyle-subtitle">Describe the component you want and ProStyle will drop clean HTML into your doc.</p>
+            <textarea id="proStylePrompt" class="form-input" rows="3" placeholder="e.g., A two-column hero with headline, bullet list, and CTA button"></textarea>
+            <div class="prostyle-footer">
+              <div id="proStyleStatus" class="prostyle-status" style="display: none;"></div>
+              <div class="prostyle-actions">
+                <button class="ghost-btn" id="cancelProStyle" type="button">Cancel</button>
+                <button class="primary-btn" id="runProStyle" type="button">Generate & Insert</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -678,10 +703,7 @@ function renderPublicEditor() {
             <div class="doc-title-input" style="border: none; background: transparent;">${doc.title || 'Untitled Document'}</div>
           </div>
           <div style="flex: 1"></div>
-          <div style="display: flex; gap: 1rem; align-items: center;">
-            <span style="font-size: 0.9rem; color: var(--text-muted);">📖 Read-Only View</span>
-            <button class="cta-btn" onclick="window.location.href='${window.location.origin}'">Sign in to Edit</button>
-          </div>
+          <div class="brand" style="font-size: 1rem;">ProEdit</div>
         </div>
       </div>
 
@@ -713,6 +735,14 @@ function setupEditorListeners() {
   const aiTrigger = document.getElementById('aiTrigger');
   const aiInput = document.getElementById('aiInput');
   const aiSend = document.getElementById('aiSend');
+  const proStyleBtn = document.getElementById('proStyleBtn');
+  const proStyleModal = document.getElementById('proStyleModal');
+  const closeProStyle = document.getElementById('closeProStyle');
+  const cancelProStyle = document.getElementById('cancelProStyle');
+  const runProStyle = document.getElementById('runProStyle');
+  const proStylePrompt = document.getElementById('proStylePrompt');
+  const proStyleStatus = document.getElementById('proStyleStatus');
+  let savedProStyleRange = null;
 
   // Feedback Elements
   const feedbackModal = document.getElementById('feedbackModal');
@@ -734,6 +764,66 @@ function setupEditorListeners() {
       }
     }
   });
+
+  const captureProStyleRange = () => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      if (editor.contains(range.commonAncestorContainer) || range.commonAncestorContainer === editor) {
+        savedProStyleRange = range.cloneRange();
+      }
+    }
+  };
+
+  const insertHtmlAtCursor = (html) => {
+    editor.focus();
+
+    const selection = window.getSelection();
+
+    if (selection && savedProStyleRange) {
+      selection.removeAllRanges();
+      selection.addRange(savedProStyleRange);
+      savedProStyleRange = null;
+    }
+
+    let range = null;
+
+    if (selection && selection.rangeCount > 0) {
+      const possibleRange = selection.getRangeAt(0);
+      if (editor.contains(possibleRange.commonAncestorContainer) || possibleRange.commonAncestorContainer === editor) {
+        range = possibleRange;
+      }
+    }
+
+    if (!range) {
+      range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      if (selection) {
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    }
+
+    range.deleteContents();
+
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    const frag = document.createDocumentFragment();
+    let node;
+    let lastNode = null;
+    while ((node = temp.firstChild)) {
+      lastNode = frag.appendChild(node);
+    }
+
+    range.insertNode(frag);
+    if (lastNode) {
+      range.setStartAfter(lastNode);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  };
 
   backBtn.addEventListener('click', () => {
     currentDocId = null;
@@ -775,6 +865,95 @@ function setupEditorListeners() {
       alert('Document is now private');
     }
   });
+
+  if (proStyleBtn && proStyleModal && closeProStyle && cancelProStyle && runProStyle && proStylePrompt && proStyleStatus) {
+    const closeProStyleModal = () => {
+      proStyleModal.style.display = 'none';
+      proStyleStatus.style.display = 'none';
+      proStyleStatus.textContent = '';
+      proStyleStatus.style.color = 'var(--text-muted)';
+      runProStyle.disabled = false;
+      proStylePrompt.value = '';
+      editor.focus();
+    };
+
+    const openProStyleModal = () => {
+      proStyleModal.style.display = 'flex';
+      proStyleStatus.style.display = 'none';
+      proStyleStatus.textContent = '';
+      proStyleStatus.style.color = 'var(--text-muted)';
+      proStylePrompt.focus();
+    };
+
+    const handleProStyle = async () => {
+      const request = proStylePrompt.value.trim();
+      if (!request) {
+        proStyleStatus.textContent = 'Add a quick description so ProStyle knows what to build.';
+        proStyleStatus.style.color = '#ef4444';
+        proStyleStatus.style.display = 'block';
+        proStylePrompt.focus();
+        return;
+      }
+
+      runProStyle.disabled = true;
+      proStyleStatus.textContent = 'Generating component...';
+      proStyleStatus.style.color = 'var(--text-muted)';
+      proStyleStatus.style.display = 'block';
+
+      const proStylePromptText = `
+You are ProStyle, an AI that writes production-ready HTML snippets for a rich text editor.
+User request: "${request}"
+
+Rules:
+- Return ONLY the HTML snippet, no markdown fences, no commentary.
+- Use semantic tags, neutral modern styling, and mobile-friendly layout.
+- Prefer inline styles or scoped classes prefixed with prostyle- if needed. Avoid external assets and scripts.
+- Do not wrap in UPDATE_DOCUMENT/APPEND_CONTENT/etc.`;
+
+      try {
+        const response = await generateContent(proStylePromptText);
+        let html = response.trim();
+
+        // Strip common wrappers the model might return
+        html = html.replace(/^```(?:html)?/i, '').replace(/```$/i, '').trim();
+        html = html.replace(/<\/?body>/gi, '').replace(/<\/?html>/gi, '');
+        html = html.replace(/<UPDATE_DOCUMENT>|<\/UPDATE_DOCUMENT>|<APPEND_CONTENT>|<\/APPEND_CONTENT>/gi, '').trim();
+
+        if (!html) throw new Error('Empty response from ProStyle');
+
+        captureProStyleRange();
+        insertHtmlAtCursor(html);
+        updateCurrentDoc({ content: editor.innerHTML });
+        closeProStyleModal();
+      } catch (err) {
+        console.error('ProStyle Error:', err);
+        proStyleStatus.textContent = 'Could not generate a component. Please try again.';
+        proStyleStatus.style.color = '#ef4444';
+        proStyleStatus.style.display = 'block';
+      } finally {
+        runProStyle.disabled = false;
+      }
+    };
+
+    proStyleBtn.addEventListener('click', () => {
+      captureProStyleRange();
+      openProStyleModal();
+    });
+
+    runProStyle.addEventListener('click', handleProStyle);
+    proStylePrompt.addEventListener('keypress', (e) => {
+      if ((e.key === 'Enter' && (e.metaKey || e.ctrlKey))) {
+        e.preventDefault();
+        handleProStyle();
+      }
+    });
+
+    closeProStyle.addEventListener('click', closeProStyleModal);
+    cancelProStyle.addEventListener('click', closeProStyleModal);
+    proStyleModal.addEventListener('click', (e) => {
+      if (e.target === proStyleModal) closeProStyleModal();
+    });
+  }
 
   docTitle.addEventListener('input', (e) => {
     updateCurrentDoc({ title: e.target.value });
