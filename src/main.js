@@ -358,12 +358,6 @@ function renderEditor() {
           </div>
 
           <div class="toolbar-group">
-            <button class="tool-btn" id="pageBreakBtn" title="Insert Page Break">
-              <i class="iconoir-page-search"></i>
-            </button>
-          </div>
-
-          <div class="toolbar-group">
             <div class="dropdown">
               <button class="tool-btn" id="exportBtn" title="Export">
                 <i class="iconoir-download"></i>
