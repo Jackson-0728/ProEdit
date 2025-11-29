@@ -53,9 +53,15 @@ export async function submitFeedback(name, email, rating, message) {
 // --- DOCUMENT CRUD OPERATIONS ---
 
 export async function getDocuments() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+        return { data: [], error: null };
+    }
+
     const { data, error } = await supabase
         .from('documents')
         .select('*')
+        .eq('user_id', session.user.id)
         .order('updated_at', { ascending: false });
     return { data, error };
 }
@@ -80,20 +86,32 @@ export async function createDocument(doc) {
 }
 
 export async function updateDocument(id, updates) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+        return { data: null, error: new Error('Not authenticated') };
+    }
+
     const { data, error } = await supabase
         .from('documents')
         .update(updates)
         .eq('id', id)
+        .eq('user_id', session.user.id)
         .select()
         .single();
     return { data, error };
 }
 
 export async function deleteDocument(id) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+        return { error: new Error('Not authenticated') };
+    }
+
     const { error } = await supabase
         .from('documents')
         .delete()
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', session.user.id);
     return { error };
 }
 
