@@ -140,12 +140,35 @@ const __dirname = path.dirname(__filename);
 // In Vercel, we don't want Express to try to serve static files usually, 
 // but it doesn't hurt to have it as fallback. 
 // However, for clean separation, we can check process.env.VERCEL
+// In Vercel, we don't want Express to try to serve static files usually, 
+// but it doesn't hurt to have it as fallback. 
+// However, for clean separation, we can check process.env.VERCEL
 if (!process.env.VERCEL) {
-    app.use(express.static(path.join(__dirname, 'dist')));
+    // Check if dist directory exists before trying to serve from it
+    const distPath = path.join(__dirname, 'dist');
+    const indexHtmlPath = path.join(distPath, 'index.html');
+
+    // Use fs to check existence - we need to import it first or use dynamic import/try-catch
+    // Since we didn't import fs at the top, let's just use try-catch for the static middleware
+    // or assume if this code runs we want to try serving
+
+    app.use(express.static(distPath));
 
     // Handle React routing, return all requests to React app
     app.get('*', (req, res) => {
-        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+        if (req.path.startsWith('/api')) {
+            // Let API requests fall through to 404 handler if not matched above
+            return res.status(404).json({ error: 'API endpoint not found' });
+        }
+
+        // Simple existence check using fs (will add import)
+        import('fs').then(fs => {
+            if (fs.existsSync(indexHtmlPath)) {
+                res.sendFile(indexHtmlPath);
+            } else {
+                res.status(404).send('Application build not found. Please run "npm run build".');
+            }
+        });
     });
 }
 

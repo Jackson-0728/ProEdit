@@ -211,6 +211,14 @@ function renderDashboard() {
     <div class="dashboard">
       <div class="dashboard-header">
         <div class="brand">Welcome to <b>ProEdit</b></div>
+        
+        <div class="search-container">
+            <div class="search-icon-wrapper">
+                <i class="iconoir-search"></i>
+            </div>
+            <input type="text" class="search-input" id="docSearch" placeholder="Search documents...">
+        </div>
+
         <div style="display: flex; gap: 1rem; align-items: center;">
           <span style="font-size: 0.9rem; color: var(--text-muted);">${user.email || 'User'}</span>
           <button class="create-btn" id="createBtn">
@@ -223,23 +231,57 @@ function renderDashboard() {
       </div>
       
       <div class="grid" id="docGrid">
-        ${documents.map(doc => `
-          <div class="doc-card" onclick="window.openDoc('${doc.id}')">
-            <button class="delete-btn" onclick="window.deleteDoc(event, '${doc.id}')" title="Delete">
-            <i class="iconoir-trash"></i>
-            </button>
-            <div class="doc-preview">
-              ${doc.content.replace(/<[^>]*>/g, '').slice(0, 150) || 'Empty document...'}
-            </div>
-            <div class="doc-meta">
-              <div class="doc-title">${doc.title || 'Untitled'}</div>
-              <div class="doc-date">${new Date(doc.updatedAt).toLocaleDateString()}</div>
-            </div>
-          </div>
-        `).join('')}
+        <!-- Docs rendered here -->
       </div>
     </div>
   `;
+
+  const renderGrid = (docsToRender) => {
+    const grid = document.getElementById('docGrid');
+    if (!docsToRender.length) {
+      grid.innerHTML = `
+            <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 3rem;">
+                <p>No documents found.</p>
+            </div>
+        `;
+      return;
+    }
+
+    grid.innerHTML = docsToRender.map(doc => `
+      <div class="doc-card" onclick="window.openDoc('${doc.id}')">
+        <button class="delete-btn" onclick="window.deleteDoc(event, '${doc.id}')" title="Delete">
+        <i class="iconoir-trash"></i>
+        </button>
+        <div class="doc-preview">
+          ${doc.content.replace(/<[^>]*>/g, '').slice(0, 150) || 'Empty document...'}
+        </div>
+        <div class="doc-meta">
+          <div class="doc-title">${doc.title || 'Untitled'}</div>
+          <div class="doc-date">${new Date(doc.updatedAt).toLocaleDateString()}</div>
+        </div>
+      </div>
+    `).join('');
+  };
+
+  // Initial render
+  renderGrid(documents);
+
+  // Search mechanism
+  document.getElementById('docSearch').addEventListener('input', (e) => {
+    const query = e.target.value.toLowerCase().trim();
+    if (!query) {
+      renderGrid(documents);
+      return;
+    }
+
+    const filtered = documents.filter(doc => {
+      const titleMatch = (doc.title || '').toLowerCase().includes(query);
+      const contentMatch = (doc.content || '').replace(/<[^>]*>/g, '').toLowerCase().includes(query);
+      return titleMatch || contentMatch;
+    });
+
+    renderGrid(filtered);
+  });
 
   document.getElementById('createBtn').addEventListener('click', createNewDoc);
   document.getElementById('logoutBtn').addEventListener('click', async () => {
