@@ -2,7 +2,7 @@ import './style.css';
 import { generateContent, evaluateModels } from './api/gemini.js';
 import { CollaborationManager } from './api/collaboration.js';
 import {
-  supabase, signIn, signUp, signOut, signInWithProvider, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument
+  supabase, signIn, signUp, signOut, signInWithProvider, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument, getDocumentPermissions, addComment, getComments, updateComment, deleteComment
 } from './api/supabase.js';
 
 
@@ -106,7 +106,7 @@ function renderLanding() {
 
 function renderLogin() {
   app.innerHTML = `
-  <div class="login-container">
+    <div class="login-container">
     <div class="login-card">
       <div class="brand" style="justify-content: center; margin-bottom: 1rem;">ProEdit</div>
       <h1 class="login-title">Welcome back</h1>
@@ -128,7 +128,7 @@ function renderLogin() {
 
       <div class="oauth-buttons">
         <button class="oauth-btn" id="googleBtn">
-          <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQgMhgB-GccVnB-ZJFuZg7HUsmdifnuxStqmA&s" class="oauth-icon" alt="Google">
+          <img src="https://lh3.googleusercontent.com/COxitqgJr1sJnIDe8-CaWOoch7XphdCqkGxbWA602145+6WjSc0unJ0AzLPr6uI=w128-h128-e365-rj-sc0x00ffffff" class="oauth-icon" alt="Google">
             Sign in with Google
         </button>
         <button class="oauth-btn" id="githubBtn">
@@ -141,7 +141,7 @@ function renderLogin() {
         Don't have an account? <a id="toggleAuth">Sign up</a>
       </div>
     </div>
-    </div >
+    </div>
   `;
 
   const form = document.getElementById('loginForm');
@@ -245,9 +245,9 @@ function renderDashboard() {
     const grid = document.getElementById('docGrid');
     if (!docsToRender.length) {
       grid.innerHTML = `
-  < div style = "grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 3rem;" >
+  <div style = "grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 3rem;" >
     <p>No documents found.</p>
-            </div >
+  </div>
   `;
       return;
     }
@@ -294,7 +294,7 @@ function renderDashboard() {
   });
 }
 
-function renderEditor() {
+async function renderEditor() {
   const doc = documents.find(d => d.id === currentDocId);
   if (!doc) return;
 
@@ -305,9 +305,33 @@ function renderEditor() {
     collaborationManager = new CollaborationManager(currentDocId, user, {
       onPresenceUpdate: updateAvatars,
       onCursorUpdate: renderRemoteCursor,
-      onChatMessage: addChatMessage
+      onChatMessage: addChatMessage,
+      onTextUpdate: (payload) => {
+        const editor = document.getElementById('editor');
+        if (editor) {
+          const selection = window.getSelection();
+          const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+          editor.innerHTML = payload.content;
+          // Very basic cursor preservation attempt (often fails on big diffs)
+          if (range) selection.addRange(range);
+        }
+      }
     });
   }
+
+  // Fetch permissions
+  let userRole = 'viewer';
+  if (user && doc.user_id === user.id) {
+    userRole = 'owner';
+  } else if (user) {
+    const { data: perms } = await getDocumentPermissions(currentDocId);
+    const myPerm = perms?.find(p => p.user_email === user.email);
+    if (myPerm) userRole = myPerm.role;
+  }
+
+  // Enforce read-only for viewers/commenters (they can comment but not edit text)
+  const isEditable = userRole === 'owner' || userRole === 'editor';
+  const contentEditableState = isEditable ? 'true' : 'false';
 
   app.innerHTML = `
   <div class="editor-layout">
@@ -347,6 +371,9 @@ function renderEditor() {
             </button>
             <button class="deploy-btn" id="chatToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);">
               <i class="iconoir-chat-bubble"></i>
+            </button>
+            <button class="deploy-btn" id="commentsToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);" title="Comments">
+              <i class="iconoir-message-text"></i>
             </button>
 
           </div>
@@ -440,8 +467,21 @@ function renderEditor() {
     </div>
 
     <div class="editor-scroll-container" id="editorScroll">
-      <div id="editor" contenteditable="true" spellcheck="false">
+      <div id="editor" contenteditable="${contentEditableState}" spellcheck="false" data-role="${userRole}">
         ${doc.content || ''}
+      </div>
+
+      <!-- Comments Sidebar -->
+      <div class="comments-sidebar" id="commentsSidebar" style="display: none;">
+        <div class="comments-header">
+           <span>Comments</span>
+           <button class="close-btn" id="closeComments">×</button>
+        </div>
+        <div class="comments-list" id="commentsList"></div>
+        <div class="comment-input-area">
+           <textarea placeholder="Add a comment..." id="newCommentInput"></textarea>
+           <button class="primary-btn" id="addCommentBtn">Post</button>
+        </div>
       </div>
     </div>
 
@@ -917,9 +957,9 @@ function renderPublicEditor() {
             </div>
           </div>
 
-          <div class="editor-scroll-container">
+          <div class="editor-scroll-container" id="editorScroll">
             <div id="editor" contenteditable="false" spellcheck="false">
-              ${doc.content}
+              ${doc.content || ''}
             </div>
           </div>
         </div>
@@ -1288,6 +1328,12 @@ function setupEditorListeners() {
 
   editor.addEventListener('input', (e) => {
     updateCurrentDoc({ content: editor.innerHTML });
+
+    // Broadcast changes
+    if (collaborationManager) {
+      collaborationManager.sendTextUpdate(editor.innerHTML);
+    }
+
     checkForSlash(editor);
     handleMarkdownShortcuts(editor, e);
   });
@@ -1900,12 +1946,33 @@ function setupEditorListeners() {
     });
   }
 
-  const sendChatMsg = () => {
+  const sendChatMsg = async () => {
     const msg = chatInput.value.trim();
     if (!msg || !collaborationManager) return;
 
     collaborationManager.sendChat(msg);
     chatInput.value = '';
+
+    // AI Interception
+    if (msg.toLowerCase().startsWith('@ai')) {
+      const query = msg.substring(3).trim();
+      if (!query) return;
+
+      try {
+        // Get context for better answers
+        const context = editor.innerText.substring(0, 1000);
+        const prompt = `Context: ${context}\n\nUser Question: ${query}\n\nAnswer briefly as a helpful assistant in the chat.`;
+
+        const response = await generateContent(prompt);
+
+        // Send as 'ai' role (rendering needs to handle this)
+        collaborationManager.sendChat(response, 'ai');
+
+      } catch (e) {
+        console.error("AI Chat Error", e);
+        collaborationManager.sendChat("Failed to get AI response.", 'ai');
+      }
+    }
   };
 
   if (chatInput) {
@@ -1955,6 +2022,9 @@ function setupEditorListeners() {
   editor.addEventListener('input', trackCursor);
   editor.addEventListener('click', trackCursor);
   editor.addEventListener('keyup', trackCursor);
+
+  setupComments();
+  setupShareLogic();
 }
 
 
@@ -2576,23 +2646,28 @@ function addChatMessage({ userEmail, message, role, timestamp }) {
 
   const div = document.createElement('div');
   const isMe = userEmail === user.email;
+  const isAi = role === 'ai';
 
   div.className = `chat-message ${isMe ? 'me' : 'other'}`;
   div.style.marginBottom = '0.75rem';
   div.style.display = 'flex';
   div.style.flexDirection = 'column';
-  div.style.alignItems = isMe ? 'flex-end' : 'flex-start';
+  div.style.alignItems = isMe && !isAi ? 'flex-end' : 'flex-start'; // AI always left aligned or distinct
+
+  const senderName = isAi ? '✨ AI Assistant' : (isMe ? 'You' : userEmail.split('@')[0]);
+  const bg = isAi ? 'linear-gradient(135deg, #a855f7, #ec4899)' : (isMe ? 'var(--primary)' : 'var(--bg-secondary)');
+  const color = isAi || isMe ? 'white' : 'var(--text-main)';
 
   div.innerHTML = `
         <div class="message-meta" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-            <span class="sender">${isMe ? 'You' : userEmail.split('@')[0]}</span>
+            <span class="sender">${senderName}</span>
             <span class="time">${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
         </div>
         <div class="message-content" style="
-            background: ${isMe ? 'var(--primary)' : 'var(--bg-secondary)'}; 
-            color: ${isMe ? 'white' : 'var(--text-main)'};
+            background: ${bg}; 
+            color: ${color};
             padding: 0.5rem 0.75rem;
-            border-radius: ${isMe ? '12px 12px 0 12px' : '12px 12px 12px 0'};
+            border-radius: ${isMe && !isAi ? '12px 12px 0 12px' : '12px 12px 12px 0'};
             max-width: 85%;
             font-size: 0.9rem;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
@@ -2602,3 +2677,168 @@ function addChatMessage({ userEmail, message, role, timestamp }) {
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+
+// --- COMMENTS LOGIC ---
+
+async function setupComments() {
+  const commentsSidebar = document.getElementById('commentsSidebar');
+  const commentsToggleBtn = document.getElementById('commentsToggleBtn');
+  const closeComments = document.getElementById('closeComments');
+  const addCommentBtn = document.getElementById('addCommentBtn');
+  const newCommentInput = document.getElementById('newCommentInput');
+  const editor = document.getElementById('editor');
+
+  if (commentsToggleBtn) {
+    commentsToggleBtn.addEventListener('click', () => {
+      commentsSidebar.style.display = commentsSidebar.style.display === 'none' ? 'flex' : 'none';
+      if (commentsSidebar.style.display === 'flex') loadComments();
+    });
+  }
+
+  if (closeComments) {
+    closeComments.addEventListener('click', () => {
+      commentsSidebar.style.display = 'none';
+    });
+  }
+
+  if (addCommentBtn) {
+    addCommentBtn.addEventListener('click', async () => {
+      const content = newCommentInput.value.trim();
+      if (!content) return;
+
+      addCommentBtn.disabled = true;
+      addCommentBtn.textContent = 'Posting...';
+
+      const { error } = await addComment(currentDocId, content);
+
+      addCommentBtn.disabled = false;
+      addCommentBtn.textContent = 'Post';
+
+      if (error) {
+        alert('Failed to post comment');
+      } else {
+        newCommentInput.value = '';
+        loadComments();
+      }
+    });
+  }
+}
+
+async function loadComments() {
+  const commentsList = document.getElementById('commentsList');
+  if (!commentsList) return;
+
+  commentsList.innerHTML = '<div style="text-align:center; padding: 1rem;">Loading...</div>';
+
+  const { data: comments, error } = await getComments(currentDocId);
+
+  if (error) {
+    commentsList.innerHTML = '<div style="color:red; text-align:center;">Failed to load comments</div>';
+    return;
+  }
+
+  if (!comments || comments.length === 0) {
+    commentsList.innerHTML = '<div style="color:gray; text-align:center; padding: 1rem;">No comments yet</div>';
+    return;
+  }
+
+  const { data: { user: currentUser } } = await supabase.auth.getUser();
+
+  commentsList.innerHTML = comments.map(c => {
+    const isOwner = currentUser && c.user_id === currentUser.id;
+    const deleteBtn = isOwner ? `<button onclick="window.deleteCommentAction(${c.id})" style="color:red; background:none; border:none; cursor:pointer; font-size:0.8rem;">Delete</button>` : '';
+
+    return `
+        <div class="comment-card">
+            <div class="comment-meta">
+                <span class="comment-author">${c.user_email.split('@')[0]}</span>
+                <span class="comment-time">${new Date(c.created_at).toLocaleDateString()}</span>
+                ${deleteBtn}
+            </div>
+            <div class="comment-content">${c.content}</div>
+        </div>
+        `;
+  }).join('');
+}
+
+window.deleteCommentAction = async (id) => {
+  if (!confirm('Delete this comment?')) return;
+  const { error } = await deleteComment(id);
+  if (error) alert('Failed to delete comment');
+  else loadComments();
+};
+
+// --- SHARE LOGIC ---
+
+async function setupShareLogic() {
+  const shareBtn = document.getElementById('shareBtn');
+  if (shareBtn) {
+    // Remove old listeners by cloning
+    const newBtn = shareBtn.cloneNode(true);
+    shareBtn.parentNode.replaceChild(newBtn, shareBtn);
+
+    newBtn.addEventListener('click', async () => {
+      const shareModal = document.getElementById('shareModal');
+      shareModal.style.display = 'flex';
+      loadSharePermissions();
+    });
+  }
+}
+
+async function loadSharePermissions() {
+  const permList = document.getElementById('permList');
+  if (!permList) return;
+
+  permList.innerHTML = '<div>Loading permissions...</div>';
+
+  // Get current user role to see if they can edit roles
+  const doc = documents.find(d => d.id === currentDocId);
+  const { data: { user: currentUser } } = await supabase.auth.getUser();
+  const isOwner = currentUser && doc.user_id === currentUser.id;
+
+  const { data: perms } = await getDocumentPermissions(currentDocId);
+
+  if (!perms) {
+    permList.innerHTML = '<div>No permissions found (Public docs may not have explicit perms)</div>';
+    return;
+  }
+
+  permList.innerHTML = perms.map(p => {
+    const canEdit = isOwner && p.user_email !== currentUser.email; // Can't change own role easily here without risking lockout
+
+    let roleBadge = `<span class="role-badge">${p.role}</span>`;
+
+    if (canEdit) {
+      roleBadge = `
+                <select onchange="window.updateRoleAction('${p.user_email}', this.value)" style="padding:2px; font-size:0.8rem;">
+                    <option value="viewer" ${p.role === 'viewer' ? 'selected' : ''}>Viewer</option>
+                    <option value="commenter" ${p.role === 'commenter' ? 'selected' : ''}>Commenter</option>
+                    <option value="editor" ${p.role === 'editor' ? 'selected' : ''}>Editor</option>
+                </select>
+            `;
+    }
+
+    return `
+        <div class="collab-user" style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee;">
+            <div class="user-info">
+                <div class="user-email" style="font-size: 0.9rem;">${p.user_email}</div>
+            </div>
+            ${roleBadge}
+        </div>
+        `;
+  }).join('');
+}
+
+window.updateRoleAction = async (email, newRole) => {
+  if (!confirm(`Change ${email} to ${newRole}?`)) return loadSharePermissions(); // Revert if cancelled
+
+  try {
+    await shareDocument(currentDocId, email, newRole);
+    alert('Role updated!');
+  } catch (e) {
+    alert('Failed to update role');
+    console.error(e);
+  }
+  loadSharePermissions();
+};
+

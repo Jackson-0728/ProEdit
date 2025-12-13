@@ -12,6 +12,7 @@ export class CollaborationManager {
         this.onPresenceUpdate = this.callbacks.onPresenceUpdate || (() => { });
         this.onCursorUpdate = this.callbacks.onCursorUpdate || (() => { });
         this.onChatMessage = this.callbacks.onChatMessage || (() => { });
+        this.onTextUpdate = this.callbacks.onTextUpdate || (() => { });
 
         this.init();
     }
@@ -42,7 +43,7 @@ export class CollaborationManager {
                 console.log('User left:', key, leftPresences);
             })
 
-            // Handle Broadcasts (Cursors, Chat)
+            // Handle Broadcasts (Cursors, Chat, Text)
             .on('broadcast', { event: 'cursor' }, ({ payload }) => {
                 // payload = { userId, color, range: { index, length }, coordinates ... }
                 if (payload.userId !== this.currentUser.id) {
@@ -52,6 +53,12 @@ export class CollaborationManager {
             .on('broadcast', { event: 'chat' }, ({ payload }) => {
                 // payload = { userId, userEmail, message, role, timestamp }
                 this.onChatMessage(payload);
+            })
+            .on('broadcast', { event: 'text' }, ({ payload }) => {
+                // payload = { userId, content, timestamp }
+                if (payload.userId !== this.currentUser.id) {
+                    this.onTextUpdate(payload);
+                }
             })
 
             // Subscribe to the channel
@@ -85,6 +92,20 @@ export class CollaborationManager {
                 range: range,
                 coordinates: coordinates // { top, left, height }
             },
+        });
+    }
+
+    async sendTextUpdate(content) {
+        if (!this.channel) return;
+
+        await this.channel.send({
+            type: 'broadcast',
+            event: 'text',
+            payload: {
+                userId: this.currentUser.id,
+                content: content,
+                timestamp: Date.now()
+            }
         });
     }
 

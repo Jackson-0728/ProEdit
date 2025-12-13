@@ -206,5 +206,32 @@ export async function getComments(docId) {
         .select('*')
         .eq('document_id', docId)
         .order('created_at', { ascending: true });
+    // ... (existing getComments)
     return { data, error };
+}
+
+export async function updateComment(commentId, content) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { error: 'Not authenticated' };
+
+    const { data, error } = await supabase
+        .from('comments')
+        .update({ content, updated_at: new Date().toISOString() })
+        .eq('id', commentId)
+        .eq('user_id', session.user.id) // Security: Ensure owning user
+        .select()
+        .single();
+    return { data, error };
+}
+
+export async function deleteComment(commentId) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { error: 'Not authenticated' };
+
+    // Note: We rely on RLS to allow deletion if user is owner OR doc owner
+    const { error } = await supabase
+        .from('comments')
+        .delete()
+        .eq('id', commentId);
+    return { error };
 }
