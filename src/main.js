@@ -1,12 +1,17 @@
 import './style.css';
 import { generateContent, evaluateModels } from './api/gemini.js';
-import { supabase, signIn, signUp, signInWithProvider, signOut, getUser, submitFeedback, getDocuments, getPublicDocument, createDocument, updateDocument, deleteDocument } from './api/supabase.js';
+import { CollaborationManager } from './api/collaboration.js';
+import {
+  supabase, signIn, signUp, signOut, signInWithProvider, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument
+} from './api/supabase.js';
 
 
 // State
 let documents = [];
 let currentDocId = null;
 let user = null;
+let collaborationManager = null;
+let collabUsers = [];
 
 // DOM Elements
 const app = document.querySelector('#app');
@@ -61,7 +66,7 @@ async function init() {
 
 function renderLanding() {
   app.innerHTML = `
-    <div class="landing-page">
+  <div class="landing-page">
       <nav class="landing-nav">
         <div class="brand">ProEdit</div>
         <div class="nav-links">
@@ -101,42 +106,42 @@ function renderLanding() {
 
 function renderLogin() {
   app.innerHTML = `
-    <div class="login-container">
-      <div class="login-card">
-        <div class="brand" style="justify-content: center; margin-bottom: 1rem;">ProEdit</div>
-        <h1 class="login-title">Welcome back</h1>
-        <p class="login-subtitle">Sign in to your account to continue</p>
-        
-        <div class="error-msg" id="errorMsg"></div>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="brand" style="justify-content: center; margin-bottom: 1rem;">ProEdit</div>
+      <h1 class="login-title">Welcome back</h1>
+      <p class="login-subtitle">Sign in to your account to continue</p>
 
-        <form id="loginForm">
-          <div class="form-group">
-            <label class="form-label">Email</label>
-            <input type="email" class="form-input" id="email" placeholder="name@example.com" required>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Password</label>
-            <input type="password" class="form-input" id="password" placeholder="••••••••" required>
-          </div>
-          <button type="submit" class="auth-btn">Sign In</button>
-        </form>
+      <div class="error-msg" id="errorMsg"></div>
 
-        <div class="oauth-buttons">
-          <button class="oauth-btn" id="googleBtn">
-            <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQgMhgB-GccVnB-ZJFuZg7HUsmdifnuxStqmA&s" class="oauth-icon" alt="Google">
+      <form id="loginForm">
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" class="form-input" id="email" placeholder="name@example.com" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" class="form-input" id="password" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="auth-btn">Sign In</button>
+      </form>
+
+      <div class="oauth-buttons">
+        <button class="oauth-btn" id="googleBtn">
+          <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQgMhgB-GccVnB-ZJFuZg7HUsmdifnuxStqmA&s" class="oauth-icon" alt="Google">
             Sign in with Google
-          </button>
-          <button class="oauth-btn" id="githubBtn">
-            <img src="https://images.icon-icons.com/3685/PNG/512/github_logo_icon_229278.png" class="oauth-icon" alt="GitHub">
+        </button>
+        <button class="oauth-btn" id="githubBtn">
+          <img src="https://images.icon-icons.com/3685/PNG/512/github_logo_icon_229278.png" class="oauth-icon" alt="GitHub">
             Sign in with GitHub
-          </button>
-        </div>
+        </button>
+      </div>
 
-        <div class="auth-link">
-          Don't have an account? <a id="toggleAuth">Sign up</a>
-        </div>
+      <div class="auth-link">
+        Don't have an account? <a id="toggleAuth">Sign up</a>
       </div>
     </div>
+    </div >
   `;
 
   const form = document.getElementById('loginForm');
@@ -180,9 +185,9 @@ function renderLogin() {
 
       if (result.error.message.includes("Email not confirmed")) {
         errorMsg.innerHTML = `
-          Please check your email to confirm your account.<br>
-          <small>If you don't see it, check your spam folder.</small>
-        `;
+          Please check your email to confirm your account.< br >
+  <small>If you don't see it, check your spam folder.</small>
+`;
       } else {
         errorMsg.textContent = result.error.message;
       }
@@ -208,7 +213,7 @@ function renderLogin() {
 
 function renderDashboard() {
   app.innerHTML = `
-    <div class="dashboard">
+  <div class="dashboard">
       <div class="dashboard-header">
         <div class="brand">Welcome to <b>ProEdit</b></div>
         
@@ -240,15 +245,15 @@ function renderDashboard() {
     const grid = document.getElementById('docGrid');
     if (!docsToRender.length) {
       grid.innerHTML = `
-            <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 3rem;">
-                <p>No documents found.</p>
-            </div>
-        `;
+  < div style = "grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 3rem;" >
+    <p>No documents found.</p>
+            </div >
+  `;
       return;
     }
 
     grid.innerHTML = docsToRender.map(doc => `
-      <div class="doc-card" onclick="window.openDoc('${doc.id}')">
+  <div class="doc-card" onclick = "window.openDoc('${doc.id}')">
         <button class="delete-btn" onclick="window.deleteDoc(event, '${doc.id}')" title="Delete">
         <i class="iconoir-trash"></i>
         </button>
@@ -260,7 +265,7 @@ function renderDashboard() {
           <div class="doc-date">${new Date(doc.updatedAt).toLocaleDateString()}</div>
         </div>
       </div>
-    `).join('');
+  `).join('');
   };
 
   // Initial render
@@ -293,9 +298,20 @@ function renderEditor() {
   const doc = documents.find(d => d.id === currentDocId);
   if (!doc) return;
 
+  // Init Collaboration
+  if (collaborationManager) collaborationManager.leave();
+
+  if (user) {
+    collaborationManager = new CollaborationManager(currentDocId, user, {
+      onPresenceUpdate: updateAvatars,
+      onCursorUpdate: renderRemoteCursor,
+      onChatMessage: addChatMessage
+    });
+  }
+
   app.innerHTML = `
-    <div class="editor-layout">
-      <!-- Beta Top Bar -->
+  <div class="editor-layout">
+      <!--Beta Top Bar-->
       <div id="betaBar" style="background: #18181b; color: white; padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
         <div style="display: flex; gap: 0.5rem; align-items: center;">
             <span style="background: #3b82f6; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: bold;">BETA</span>
@@ -306,373 +322,426 @@ function renderEditor() {
             <button id="closeBeta" style="background: transparent; border: none; color: #a1a1aa; cursor: pointer; font-size: 1.2rem;">×</button>
         </div>
       </div>
-      <!-- Top Bar: Menu + Toolbar -->
-      <div class="top-bar">
-        <div class="menu-bar">
-          <div class="doc-info">
-            <input type="text" class="doc-title-input" id="docTitle" value="${doc.title || 'Untitled Document'}" placeholder="Untitled Document">
-          </div>
-          <div style="flex: 1"></div>
-          <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <button class="prostyle-btn" id="proStyleBtn" title="Generate HTML components with AI">
-              <span class="prostyle-icon">AI</span>
-              <span>ProStyle</span>
-            </button>
-            <button class="deploy-btn ${doc.is_public ? 'published' : ''}" id="deployBtn" title="Deploy to Web">
-              <i class="iconoir-rocket"></i>
-              <span id="deployText">${doc.is_public ? 'Published' : 'Deploy'}</span>
-            </button>
-            <button class="tool-btn" id="backBtn" title="Back to Dashboard">
-              <i class="iconoir-arrow-left"></i>
-            </button>
-          </div>
-        </div>
+      <!--Top Bar: Menu + Toolbar-->
+  <div class="top-bar">
+    <div class="menu-bar">
+      <div class="doc-info">
+        <input type="text" class="doc-title-input" id="docTitle" value="${doc.title || 'Untitled Document'}" placeholder="Untitled Document">
+      </div>
+      <div style="flex: 1"></div>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button class="prostyle-btn" id="proStyleBtn" title="Generate HTML components with AI">
+          <span class="prostyle-icon">AI</span>
+          <span>ProStyle</span>
+        </button>
+        <button class="deploy-btn ${doc.is_public ? 'published' : ''}" id="deployBtn" title="Deploy to Web">
+          <i class="iconoir-rocket"></i>
+          <span id="deployText">${doc.is_public ? 'Published' : 'Deploy'}</span>
+        </button>
 
-        <div class="toolbar">
-          <div class="toolbar-group">
-            <button class="tool-btn" onclick="document.execCommand('undo')" title="Undo">
-              <i class="iconoir-undo"></i>
-            </button>
-            <button class="tool-btn" onclick="document.execCommand('redo')" title="Redo">
-              <i class="iconoir-redo"></i>
-            </button>
-          </div>
+            <!-- Collaborative Tools -->
+            <div class="avatars-stack" id="avatarStack"></div>
 
-          <div class="toolbar-group">
-            <select class="tool-select" id="fontFamily" title="Font">
-              <option value="Arial">Arial</option>
-              <option value="Inter">Inter</option>
-              <option value="Roboto">Roboto</option>
-              <option value="Open Sans">Open Sans</option>
-              <option value="Merriweather">Merriweather</option>
-              <option value="Playfair Display">Playfair Display</option>
-              <option value="Courier Prime">Courier Prime</option>
-              <option value="Comic Neue">Comic Neue</option>
-              <option value="Lobster">Lobster</option>
-              <option value="Pacifico">Pacifico</option>
-              <option value="Oswald">Oswald</option>
-            </select>
-            <select class="tool-select" id="fontSize" title="Font Size">
-              <option value="1">10px</option>
-              <option value="2">13px</option>
-              <option value="3" selected>16px</option>
-              <option value="4">18px</option>
-              <option value="5">24px</option>
-              <option value="6">32px</option>
-              <option value="7">48px</option>
-            </select>
-          </div>
+            <button class="deploy-btn" id="shareBtn" style="border-color: var(--primary); color: var(--primary);">
+              <i class="iconoir-share-android"></i> Share
+            </button>
+            <button class="deploy-btn" id="chatToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);">
+              <i class="iconoir-chat-bubble"></i>
+            </button>
 
-          <div class="toolbar-group">
-            <button class="tool-btn" data-cmd="bold" title="Bold">
-              <i class="iconoir-bold"></i>
-            </button>
-            <button class="tool-btn" data-cmd="italic" title="Italic">
-              <i class="iconoir-italic"></i>
-            </button>
-            <button class="tool-btn" data-cmd="underline" title="Underline">
-              <i class="iconoir-underline"></i>
-            </button>
           </div>
-
-          <div class="toolbar-group">
-            <button class="tool-btn" data-cmd="justifyLeft" title="Align Left">
-              <i class="iconoir-align-left"></i>
-            </button>
-            <button class="tool-btn" data-cmd="justifyCenter" title="Align Center">
-              <i class="iconoir-align-center"></i>
-            </button>
-            <button class="tool-btn" data-cmd="justifyRight" title="Align Right">
-              <i class="iconoir-align-right"></i>
-            </button>
-            <button class="tool-btn" data-cmd="justifyFull" title="Justify">
-              <i class="iconoir-align-justify"></i>
-            </button>
-          </div>
-
-          <div class="toolbar-group">
-            <button class="tool-btn" data-cmd="insertUnorderedList" title="Bullet List">
-              <i class="iconoir-list"></i>
-            </button>
-            <button class="tool-btn" data-cmd="insertOrderedList" title="Numbered List">
-              <i class="iconoir-numbered-list-left"></i>
-            </button>
-          </div>
-
-          <div class="toolbar-group">
-            <div class="dropdown">
-              <button class="tool-btn" id="exportBtn" title="Export">
-                <i class="iconoir-download"></i>
-              </button>
-              <div class="dropdown-content">
-                <button onclick="window.exportDoc('pdf')">PDF (.pdf)</button>
-                <button onclick="window.exportDoc('word')">Word (.doc)</button>
-                <button onclick="window.exportDoc('md')">Markdown (.md)</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
       </div>
 
-      <!-- Editor Area -->
-      <div class="editor-scroll-container">
-        <div id="editor" contenteditable="true" spellcheck="false">
-          ${doc.content}
-        </div>
-      </div>
-
-      <!-- AI Trigger -->
-      <button class="ai-trigger" id="aiTrigger" title="Ask AI">
-        <i class="iconoir-sparks"></i>
-      </button>
-
-      <!-- Slash Menu -->
-      <div class="slash-menu" id="slashMenu">
-        <div class="slash-item" data-action="continue">
-          <div class="slash-info">
-            <div class="slash-title">Continue writing</div>
-            <div class="slash-desc">Let AI finish your thought</div>
-          </div>
-        </div>
-        <div class="slash-item" data-action="summarize">
-          <div class="slash-info">
-            <div class="slash-title">Summarize</div>
-            <div class="slash-desc">Create a brief summary</div>
-          </div>
-        </div>
-        <div class="slash-item" data-action="improve">
-          <div class="slash-info">
-            <div class="slash-title">Improve writing</div>
-            <div class="slash-desc">Fix grammar and style</div>
-          </div>
-        </div>
-      </div>
-
-      <!-- AI Chat Popup -->
-      <div class="ai-popup" id="aiPopup" style="display: none;">
-        <div class="ai-header" id="aiHeader" style="cursor: move;">
-          <div class="ai-title"><i class="iconoir-sparks"></i> AI Assistant</div>
-          <div class="ai-controls">
-            <select class="model-selector" id="aiModelSelector" title="Select AI Model">
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-            </select>
-            <button class="ai-btn-icon" id="expandAi" title="Expand"><i class="iconoir-expand"></i></button>
-            <button class="ai-btn-icon" id="closeAi" title="Close"><i class="iconoir-xmark-circle"></i></button>
-          </div>
-        </div>
-        <div class="ai-messages" id="aiMessages">
-          <!-- Messages will appear here -->
-        </div>
-        <div class="ai-input-area">
-          <input type="text" class="ai-input" id="aiInput" placeholder="Ask AI to write, edit, or summarize...">
-          <button class="ai-send" id="aiSend"><i class="iconoir-send"></i></button>
-        </div>
-      </div>
-
-      <!-- ProStyle Modal -->
-      <div class="modal-overlay" id="proStyleModal" style="display: none;">
-        <div class="modal-card prostyle-card">
-          <div class="modal-header">
-            <h3>ProStyle Component Builder</h3>
-            <button class="close-btn" id="closeProStyle">×</button>
-          </div>
-          <div class="modal-body">
-            <p class="prostyle-subtitle">Describe the component you want and ProStyle will drop clean HTML into your doc.</p>
-            <div class="form-group">
-              <label>AI Model</label>
-              <select class="model-selector" id="proStyleModelSelector" style="width: 100%;">
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-              </select>
-            </div>
-            <textarea id="proStylePrompt" class="form-input" rows="3" placeholder="e.g., A two-column hero with headline, bullet list, and CTA button"></textarea>
-            <div class="prostyle-footer">
-              <div id="proStyleStatus" class="prostyle-status" style="display: none;"></div>
-              <div class="prostyle-actions">
-                <button class="ghost-btn" id="cancelProStyle" type="button">Cancel</button>
-                <button class="primary-btn" id="runProStyle" type="button">Generate & Insert</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Evaluation Modal -->
-      <div class="modal-overlay" id="evalModal" style="display: none;">
-        <div class="modal-card eval-card">
-          <div class="modal-header">
-            <h3>Model Evaluation</h3>
-            <button class="close-btn" id="closeEval">×</button>
-          </div>
-          <div class="modal-body">
-            <p class="eval-subtitle">Compare all 3 Gemini models side-by-side for speed and quality.</p>
-            <div class="form-group">
-              <textarea id="evalPrompt" class="form-input" rows="3" placeholder="Enter a prompt to test all models..."></textarea>
-            </div>
-            <div class="eval-actions">
-              <button class="primary-btn" id="runEval" type="button">Run Evaluation</button>
-            </div>
-            
-            <div class="eval-results" id="evalResults" style="display: none;">
-              <div class="eval-grid">
-                <!-- Flash -->
-                <div class="eval-col" id="col-flash">
-                  <div class="eval-col-header">
-                    <span class="model-name">Gemini 2.5 Flash</span>
-                    <span class="eval-metric time" id="time-flash">-</span>
-                  </div>
-                  <div class="eval-content" id="res-flash"></div>
-                  <div class="eval-meta" id="meta-flash"></div>
-                </div>
-                
-                <!-- Flash Lite -->
-                <div class="eval-col" id="col-lite">
-                  <div class="eval-col-header">
-                    <span class="model-name">Gemini 2.5 Flash Lite</span>
-                    <span class="eval-metric time" id="time-lite">-</span>
-                  </div>
-                  <div class="eval-content" id="res-lite"></div>
-                  <div class="eval-meta" id="meta-lite"></div>
-                </div>
-                
-                <!-- Pro -->
-                <div class="eval-col" id="col-pro">
-                  <div class="eval-col-header">
-                    <span class="model-name">Gemini 2.5 Pro</span>
-                    <span class="eval-metric time" id="time-pro">-</span>
-                  </div>
-                  <div class="eval-content" id="res-pro"></div>
-                  <div class="eval-meta" id="meta-pro"></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Feedback Modal -->
-      <div class="modal-overlay" id="feedbackModal" style="display: none;">
-        <div class="modal-card">
-          <div class="modal-header">
-            <h3>Send Feedback</h3>
-            <button class="close-btn" id="closeFeedback">×</button>
-          </div>
-          <div class="modal-body">
-            <form id="feedbackForm">
-              <div class="form-group">
-                <label>Name</label>
-                <input type="text" id="fbName" class="form-input" required>
-              </div>
-              <div class="form-group">
-                <label>Email</label>
-                <input type="email" id="fbEmail" class="form-input" required>
-              </div>
-              <div class="form-group">
-                <label>Rating</label>
-                <div class="rating-input">
-                  <input type="radio" name="rating" value="5" id="r5"><label for="r5">★</label>
-                  <input type="radio" name="rating" value="4" id="r4"><label for="r4">★</label>
-                  <input type="radio" name="rating" value="3" id="r3"><label for="r3">★</label>
-                  <input type="radio" name="rating" value="2" id="r2"><label for="r2">★</label>
-                  <input type="radio" name="rating" value="1" id="r1"><label for="r1">★</label>
-                </div>
-              </div>
-              <div class="form-group">
-                <label>Message</label>
-                <textarea id="fbMessage" class="form-input" rows="4" required></textarea>
-              </div>
-              <button type="submit" class="primary-btn" style="width: 100%; margin-top: 1rem;">Submit Feedback</button>
-            </form>
-          </div>
-        </div>
-      </div>
-
-      <!-- Help Button & Panel -->
-      <button class="help-trigger" id="helpTrigger" title="Help">
-        <i class="iconoir-help-circle"></i>
-        <span>Help</span>
-      </button>
-
-      <div class="help-panel" id="helpPanel" style="display: none;">
-        <div class="help-panel-header">
-          <h3>Need Help?</h3>
-          <button class="close-btn" id="closeHelp">×</button>
-        </div>
-        <div class="help-panel-body">
-          <button class="help-option" id="openAiChatBtn">
-            <i class="iconoir-sparks"></i>
-            <div>
-              <div class="help-option-title">Ask AI Assistant</div>
-              <div class="help-option-desc">Get help with how to use ProEdit</div>
-            </div>
+      <!-- Toolbar (Existing) -->
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <button class="tool-btn" onclick="document.execCommand('undo')" title="Undo">
+            <i class="iconoir-undo"></i>
           </button>
-          <button class="help-option" id="restartTutorialBtn">
-            <i class="iconoir-graduation-cap"></i>
-            <div>
-              <div class="help-option-title">Restart Tutorial</div>
-              <div class="help-option-desc">Take the guided tour again</div>
-            </div>
+          <button class="tool-btn" onclick="document.execCommand('redo')" title="Redo">
+            <i class="iconoir-redo"></i>
           </button>
         </div>
-      </div>
 
-      <!-- Help Chat Popup -->
-      <div class="help-chat-popup" id="helpChatPopup">
-        <div class="help-chat-header" id="helpChatHeader">
-          <div class="help-chat-title">
-            <i class="iconoir-sparks"></i>
-            <span>ProEdit Assistant</span>
-          </div>
-          <div class="ai-controls">
-            <button class="ai-btn-icon" id="closeHelpChat">×</button>
-          </div>
+        <div class="toolbar-group">
+          <select class="tool-select" id="fontFamily" title="Font">
+            <option value="Arial">Arial</option>
+            <option value="Inter">Inter</option>
+            <option value="Roboto">Roboto</option>
+            <option value="Open Sans">Open Sans</option>
+            <option value="Merriweather">Merriweather</option>
+            <option value="Playfair Display">Playfair Display</option>
+            <option value="Courier Prime">Courier Prime</option>
+            <option value="Comic Neue">Comic Neue</option>
+            <option value="Lobster">Lobster</option>
+            <option value="Pacifico">Pacifico</option>
+            <option value="Oswald">Oswald</option>
+          </select>
+          <select class="tool-select" id="fontSize" title="Font Size">
+            <option value="1">10px</option>
+            <option value="2">13px</option>
+            <option value="3" selected>16px</option>
+            <option value="4">18px</option>
+            <option value="5">24px</option>
+            <option value="6">32px</option>
+            <option value="7">48px</option>
+          </select>
         </div>
-        <div class="help-chat-messages" id="helpChatMessages">
-          <div class="ai-message ai">
-            Hello! I'm your ProEdit guide. Ask me anything about using the editor, formatting, or deploying your documents.
-          </div>
-        </div>
-        <div class="help-chat-input-area">
-          <input type="text" class="ai-input" id="helpChatInput" placeholder="How do I...">
-          <button class="help-chat-send" id="helpChatSend">
-            <i class="iconoir-send"></i>
+
+        <div class="toolbar-group">
+          <button class="tool-btn" data-cmd="bold" title="Bold">
+            <i class="iconoir-bold"></i>
+          </button>
+          <button class="tool-btn" data-cmd="italic" title="Italic">
+            <i class="iconoir-italic"></i>
+          </button>
+          <button class="tool-btn" data-cmd="underline" title="Underline">
+            <i class="iconoir-underline"></i>
           </button>
         </div>
-      </div>
 
-      <!-- Text Selection Edit Popup -->
-      <div class="text-edit-popup" id="textEditPopup">
-        <button class="edit-popup-btn" data-action="improve">
-          <i class="iconoir-sparks"></i>
-          <span>Improve</span>
-        </button>
-        <button class="edit-popup-btn" data-action="simplify">
-          <i class="iconoir-text"></i>
-          <span>Simplify</span>
-        </button>
-        <button class="edit-popup-btn" data-action="expand">
-          <i class="iconoir-plus-circle"></i>
-          <span>Expand</span>
-        </button>
-        <div class="edit-popup-divider"></div>
-        <button class="edit-popup-btn" data-action="custom">
-          <i class="iconoir-edit-pencil"></i>
-          <span>Custom Edit...</span>
-        </button>
-        <div class="edit-popup-custom" id="editPopupCustom">
-          <input type="text" class="edit-popup-input" id="editPopupInput" placeholder="Describe how to edit...">
-          <div class="edit-popup-actions">
-            <button class="edit-popup-cancel" id="editPopupCancel">Cancel</button>
-            <button class="edit-popup-submit" id="editPopupSubmit">Apply</button>
+        <div class="toolbar-group">
+          <button class="tool-btn" data-cmd="justifyLeft" title="Align Left">
+            <i class="iconoir-align-left"></i>
+          </button>
+          <button class="tool-btn" data-cmd="justifyCenter" title="Align Center">
+            <i class="iconoir-align-center"></i>
+          </button>
+          <button class="tool-btn" data-cmd="justifyRight" title="Align Right">
+            <i class="iconoir-align-right"></i>
+          </button>
+          <button class="tool-btn" data-cmd="justifyFull" title="Justify">
+            <i class="iconoir-align-justify"></i>
+          </button>
+        </div>
+
+        <div class="toolbar-group">
+          <button class="tool-btn" data-cmd="insertUnorderedList" title="Bullet List">
+            <i class="iconoir-list"></i>
+          </button>
+          <button class="tool-btn" data-cmd="insertOrderedList" title="Numbered List">
+            <i class="iconoir-numbered-list-left"></i>
+          </button>
+        </div>
+
+        <div class="toolbar-group">
+          <div class="dropdown">
+            <button class="tool-btn" id="exportBtn" title="Export">
+              <i class="iconoir-download"></i>
+            </button>
+            <div class="dropdown-content">
+              <button onclick="window.exportDoc('pdf')">PDF (.pdf)</button>
+              <button onclick="window.exportDoc('word')">Word (.doc)</button>
+              <button onclick="window.exportDoc('md')">Markdown (.md)</button>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  `;
+
+    <div class="editor-scroll-container" id="editorScroll">
+      <div id="editor" contenteditable="true" spellcheck="false">
+        ${doc.content || ''}
+      </div>
+    </div>
+
+    <!-- Existing Modals & Buttons -->
+    <button class="ai-trigger" onclick="document.querySelector('.ai-popup').classList.toggle('visible')">
+      <i class="iconoir-sparks"></i>
+    </button>
+
+    <!-- Chat Widget -->
+    <div class="chat-widget" id="chatWidget">
+      <div class="chat-header">
+        <span>Chat</span>
+        <button class="close-btn" onclick="document.getElementById('chatWidget').classList.remove('visible')">×</button>
+      </div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-area">
+        <input type="text" class="chat-input" id="chatInput" placeholder="Type a message...">
+          <button class="ai-send" onclick="sendChat()" style="width: 32px; height: 32px;"><i class="iconoir-send"></i></button>
+      </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div class="modal-overlay" id="shareModal" style="display: none;">
+      <div class="modal-card" style="max-width: 450px;">
+        <div class="modal-header">
+          <h3>Share Document</h3>
+          <button class="close-btn" onclick="document.getElementById('shareModal').style.display='none'">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="share-input-group">
+            <input type="email" class="share-input" id="shareEmail" placeholder="Enter email address">
+              <select class="share-role-select" id="shareRole">
+                <option value="viewer">Viewer</option>
+                <option value="commenter">Commenter</option>
+                <option value="editor">Editor</option>
+              </select>
+              <button class="primary-btn" id="sendInviteBtn" style="padding: 0.5rem 1rem;">Invite</button>
+          </div>
+
+          <div style="margin-top: 1rem;">
+            <h4 style="font-size: 0.9rem; margin-bottom: 0.5rem;">People with access</h4>
+            <div class="collaborators-list" id="permList">
+              <!-- Populated via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Trigger -->
+    <button class="ai-trigger" id="aiTrigger" title="Ask AI">
+      <i class="iconoir-sparks"></i>
+    </button>
+
+    <!-- Slash Menu -->
+    <div class="slash-menu" id="slashMenu">
+      <div class="slash-item" data-action="continue">
+        <div class="slash-info">
+          <div class="slash-title">Continue writing</div>
+          <div class="slash-desc">Let AI finish your thought</div>
+        </div>
+      </div>
+      <div class="slash-item" data-action="summarize">
+        <div class="slash-info">
+          <div class="slash-title">Summarize</div>
+          <div class="slash-desc">Create a brief summary</div>
+        </div>
+      </div>
+      <div class="slash-item" data-action="improve">
+        <div class="slash-info">
+          <div class="slash-title">Improve writing</div>
+          <div class="slash-desc">Fix grammar and style</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Chat Popup -->
+    <div class="ai-popup" id="aiPopup" style="display: none;">
+      <div class="ai-header" id="aiHeader" style="cursor: move;">
+        <div class="ai-title"><i class="iconoir-sparks"></i> AI Assistant</div>
+        <div class="ai-controls">
+          <select class="model-selector" id="aiModelSelector" title="Select AI Model">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          </select>
+          <button class="ai-btn-icon" id="expandAi" title="Expand"><i class="iconoir-expand"></i></button>
+          <button class="ai-btn-icon" id="closeAi" title="Close"><i class="iconoir-xmark-circle"></i></button>
+        </div>
+      </div>
+      <div class="ai-messages" id="aiMessages">
+        <!-- Messages will appear here -->
+      </div>
+      <div class="ai-input-area">
+        <input type="text" class="ai-input" id="aiInput" placeholder="Ask AI to write, edit, or summarize...">
+          <button class="ai-send" id="aiSend"><i class="iconoir-send"></i></button>
+      </div>
+    </div>
+
+    <!-- ProStyle Modal -->
+    <div class="modal-overlay" id="proStyleModal" style="display: none;">
+      <div class="modal-card prostyle-card">
+        <div class="modal-header">
+          <h3>ProStyle Component Builder</h3>
+          <button class="close-btn" id="closeProStyle">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="prostyle-subtitle">Describe the component you want and ProStyle will drop clean HTML into your doc.</p>
+          <div class="form-group">
+            <label>AI Model</label>
+            <select class="model-selector" id="proStyleModelSelector" style="width: 100%;">
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            </select>
+          </div>
+          <textarea id="proStylePrompt" class="form-input" rows="3" placeholder="e.g., A two-column hero with headline, bullet list, and CTA button"></textarea>
+          <div class="prostyle-footer">
+            <div id="proStyleStatus" class="prostyle-status" style="display: none;"></div>
+            <div class="prostyle-actions">
+              <button class="ghost-btn" id="cancelProStyle" type="button">Cancel</button>
+              <button class="primary-btn" id="runProStyle" type="button">Generate & Insert</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Evaluation Modal -->
+    <div class="modal-overlay" id="evalModal" style="display: none; ">
+      <div class="modal-card eval-card">
+        <div class="modal-header">
+          <h3>Model Evaluation</h3>
+          <button class="close-btn" id="closeEval">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="eval-subtitle">Compare all 3 Gemini models side-by-side for speed and quality.</p>
+          <div class="form-group">
+            <textarea id="evalPrompt" class="form-input" rows="3" placeholder="Enter a prompt to test all models..."></textarea>
+          </div>
+          <div class="eval-actions">
+            <button class="primary-btn" id="runEval" type="button">Run Evaluation</button>
+          </div>
+
+          <div class="eval-results" id="evalResults" style="display: none;">
+            <div class="eval-grid">
+              <!-- Flash -->
+              <div class="eval-col" id="col-flash">
+                <div class="eval-col-header">
+                  <span class="model-name">Gemini 2.5 Flash</span>
+                  <span class="eval-metric time" id="time-flash">-</span>
+                </div>
+                <div class="eval-content" id="res-flash"></div>
+                <div class="eval-meta" id="meta-flash"></div>
+              </div>
+
+              <!-- Flash Lite -->
+              <div class="eval-col" id="col-lite">
+                <div class="eval-col-header">
+                  <span class="model-name">Gemini 2.5 Flash Lite</span>
+                  <span class="eval-metric time" id="time-lite">-</span>
+                </div>
+                <div class="eval-content" id="res-lite"></div>
+                <div class="eval-meta" id="meta-lite"></div>
+              </div>
+
+              <!-- Pro -->
+              <div class="eval-col" id="col-pro">
+                <div class="eval-col-header">
+                  <span class="model-name">Gemini 2.5 Pro</span>
+                  <span class="eval-metric time" id="time-pro">-</span>
+                </div>
+                <div class="eval-content" id="res-pro"></div>
+                <div class="eval-meta" id="meta-pro"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feedback Modal -->
+    <div class="modal-overlay" id="feedbackModal" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Send Feedback</h3>
+          <button class="close-btn" id="closeFeedback">×</button>
+        </div>
+        <div class="modal-body">
+          <form id="feedbackForm">
+            <div class="form-group">
+              <label>Name</label>
+              <input type="text" id="fbName" class="form-input" required>
+            </div>
+            <div class="form-group">
+              <label>Email</label>
+              <input type="email" id="fbEmail" class="form-input" required>
+            </div>
+            <div class="form-group">
+              <label>Rating</label>
+              <div class="rating-input">
+                <input type="radio" name="rating" value="5" id="r5"><label for="r5">★</label>
+                  <input type="radio" name="rating" value="4" id="r4"><label for="r4">★</label>
+                    <input type="radio" name="rating" value="3" id="r3"><label for="r3">★</label>
+                      <input type="radio" name="rating" value="2" id="r2"><label for="r2">★</label>
+                        <input type="radio" name="rating" value="1" id="r1"><label for="r1">★</label>
+                        </div>
+                      </div>
+                      <div class="form-group">
+                        <label>Message</label>
+                        <textarea id="fbMessage" class="form-input" rows="4" required></textarea>
+                      </div>
+                      <button type="submit" class="primary-btn" style="width: 100%; margin-top: 1rem;">Submit Feedback</button>
+                    </form>
+                  </div>
+              </div>
+            </div>
+
+            <!-- Help Button & Panel -->
+            <button class="help-trigger" id="helpTrigger" title="Help">
+              <i class="iconoir-help-circle"></i>
+              <span>Help</span>
+            </button>
+
+            <div class="help-panel" id="helpPanel" style="display: none;">
+              <div class="help-panel-header">
+                <h3>Need Help?</h3>
+                <button class="close-btn" id="closeHelp">×</button>
+              </div>
+              <div class="help-panel-body">
+                <button class="help-option" id="openAiChatBtn">
+                  <i class="iconoir-sparks"></i>
+                  <div>
+                    <div class="help-option-title">Ask AI Assistant</div>
+                    <div class="help-option-desc">Get help with how to use ProEdit</div>
+                  </div>
+                </button>
+                <button class="help-option" id="restartTutorialBtn">
+                  <i class="iconoir-graduation-cap"></i>
+                  <div>
+                    <div class="help-option-title">Restart Tutorial</div>
+                    <div class="help-option-desc">Take the guided tour again</div>
+                  </div>
+                </button>
+              </div>
+            </div>
+
+            <!-- Help Chat Popup -->
+            <div class="help-chat-popup" id="helpChatPopup">
+              <div class="help-chat-header" id="helpChatHeader">
+                <div class="help-chat-title">
+                  <i class="iconoir-sparks"></i>
+                  <span>ProEdit Assistant</span>
+                </div>
+                <div class="ai-controls">
+                  <button class="ai-btn-icon" id="closeHelpChat">×</button>
+                </div>
+              </div>
+              <div class="help-chat-messages" id="helpChatMessages">
+                <div class="ai-message ai">
+                  Hello! I'm your ProEdit guide. Ask me anything about using the editor, formatting, or deploying your documents.
+                </div>
+              </div>
+              <div class="help-chat-input-area">
+                <input type="text" class="ai-input" id="helpChatInput" placeholder="How do I...">
+                  <button class="help-chat-send" id="helpChatSend">
+                    <i class="iconoir-send"></i>
+                  </button>
+              </div>
+            </div>
+
+            <!-- Text Selection Edit Popup -->
+            <div class="text-edit-popup" id="textEditPopup">
+              <button class="edit-popup-btn" data-action="improve">
+                <i class="iconoir-sparks"></i>
+                <span>Improve</span>
+              </button>
+              <button class="edit-popup-btn" data-action="simplify">
+                <i class="iconoir-text"></i>
+                <span>Simplify</span>
+              </button>
+              <button class="edit-popup-btn" data-action="expand">
+                <i class="iconoir-plus-circle"></i>
+                <span>Expand</span>
+              </button>
+              <div class="edit-popup-divider"></div>
+              <button class="edit-popup-btn" data-action="custom">
+                <i class="iconoir-edit-pencil"></i>
+                <span>Custom Edit...</span>
+              </button>
+              <div class="edit-popup-custom" id="editPopupCustom">
+                <input type="text" class="edit-popup-input" id="editPopupInput" placeholder="Describe how to edit...">
+                  <div class="edit-popup-actions">
+                    <button class="edit-popup-cancel" id="editPopupCancel">Cancel</button>
+                    <button class="edit-popup-submit" id="editPopupSubmit">Apply</button>
+                  </div>
+              </div>
+            </div>
+        </div>
+        `;
 
   setupEditorListeners();
   setupBetaBar();
@@ -727,13 +796,24 @@ window.deleteDoc = async (e, id) => {
 
 async function loadDocs() {
   if (!user) return;
-  const { data, error } = await getDocuments();
-  if (error) {
-    console.error('Error loading documents:', error);
-    documents = [];
-    return;
-  }
-  documents = data || [];
+
+  // Load own docs
+  const { data: ownDocs, error: ownError } = await getDocuments();
+  if (ownError) console.error('Error loading own documents:', ownError);
+
+  // Load shared docs
+  const { data: sharedDocs, error: sharedError } = await getSharedDocuments();
+  if (sharedError) console.error('Error loading shared documents:', sharedError);
+
+  // Merge and sort
+  const allDocs = [...(ownDocs || []), ...(sharedDocs || [])];
+  // Remove duplicates just in case (e.g. if I own it but it's also 'shared' with me explicitly?)
+  const uniqueDocs = Array.from(new Map(allDocs.map(item => [item.id, item])).values());
+
+  // Sort by updated_at
+  uniqueDocs.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
+
+  documents = uniqueDocs;
 }
 
 // Keep for backward compatibility with migration
@@ -826,24 +906,24 @@ function renderPublicEditor() {
   if (!doc) return;
 
   app.innerHTML = `
-    <div class="editor-layout">
-      <div class="top-bar">
-        <div class="menu-bar">
-          <div class="doc-info">
-            <div class="doc-title-input" style="border: none; background: transparent;">${doc.title || 'Untitled Document'}</div>
+        <div class="editor-layout">
+          <div class="top-bar">
+            <div class="menu-bar">
+              <div class="doc-info">
+                <div class="doc-title-input" style="border: none; background: transparent;">${doc.title || 'Untitled Document'}</div>
+              </div>
+              <div style="flex: 1"></div>
+              <div class="brand" style="font-size: 1rem;">ProEdit</div>
+            </div>
           </div>
-          <div style="flex: 1"></div>
-          <div class="brand" style="font-size: 1rem;">ProEdit</div>
-        </div>
-      </div>
 
-      <div class="editor-scroll-container">
-        <div id="editor" contenteditable="false" spellcheck="false">
-          ${doc.content}
+          <div class="editor-scroll-container">
+            <div id="editor" contenteditable="false" spellcheck="false">
+              ${doc.content}
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  `;
+        `;
 }
 
 
@@ -872,23 +952,26 @@ function setupEditorListeners() {
 
   // Load saved model preference or use default
   const savedModel = localStorage.getItem('proedit_ai_model') || 'gemini-2.5-flash';
-  aiModelSelector.value = savedModel;
-  proStyleModelSelector.value = savedModel;
 
-  // Save model preference when changed
-  aiModelSelector.addEventListener('change', () => {
-    const selectedModel = aiModelSelector.value;
-    localStorage.setItem('proedit_ai_model', selectedModel);
-    // Sync with ProStyle selector
-    proStyleModelSelector.value = selectedModel;
-  });
+  if (aiModelSelector) {
+    aiModelSelector.value = savedModel;
+    aiModelSelector.addEventListener('change', () => {
+      const selectedModel = aiModelSelector.value;
+      localStorage.setItem('proedit_ai_model', selectedModel);
+      // Sync with ProStyle selector
+      if (proStyleModelSelector) proStyleModelSelector.value = selectedModel;
+    });
+  }
 
-  proStyleModelSelector.addEventListener('change', () => {
-    const selectedModel = proStyleModelSelector.value;
-    localStorage.setItem('proedit_ai_model', selectedModel);
-    // Sync with AI chat selector
-    aiModelSelector.value = selectedModel;
-  });
+  if (proStyleModelSelector) {
+    proStyleModelSelector.value = savedModel;
+    proStyleModelSelector.addEventListener('change', () => {
+      const selectedModel = proStyleModelSelector.value;
+      localStorage.setItem('proedit_ai_model', selectedModel);
+      // Sync with AI chat selector
+      if (aiModelSelector) aiModelSelector.value = selectedModel;
+    });
+  }
   const proStyleBtn = document.getElementById('proStyleBtn');
   const proStyleModal = document.getElementById('proStyleModal');
   const closeProStyle = document.getElementById('closeProStyle');
@@ -1063,46 +1146,51 @@ function setupEditorListeners() {
     }
   };
 
-  backBtn.addEventListener('click', () => {
-    currentDocId = null;
-    renderDashboard();
-  });
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      currentDocId = null;
+      renderDashboard();
+    });
+  }
 
   // Deploy button
   const deployBtn = document.getElementById('deployBtn');
-  deployBtn.addEventListener('click', async () => {
-    const doc = documents.find(d => d.id === currentDocId);
-    if (!doc) return;
+  if (deployBtn) {
+    deployBtn.addEventListener('click', async () => {
+      const doc = documents.find(d => d.id === currentDocId);
+      if (!doc) return;
 
-    const newPublicStatus = !doc.is_public;
+      const newPublicStatus = !doc.is_public;
 
-    // Update in Supabase
-    const { error } = await updateDocument(currentDocId, { is_public: newPublicStatus });
-    if (error) {
-      console.error('Error updating public status:', error);
-      alert('Failed to update deployment status');
-      return;
-    }
+      // Update in Supabase
+      const { error } = await updateDocument(currentDocId, { is_public: newPublicStatus });
+      if (error) {
+        console.error('Error updating public status:', error);
+        alert('Failed to update deployment status');
+        return;
+      }
 
-    // Update local state
-    doc.is_public = newPublicStatus;
-    const index = documents.findIndex(d => d.id === currentDocId);
-    if (index !== -1) {
-      documents[index] = doc;
-    }
+      // Update local state
+      doc.is_public = newPublicStatus;
+      const index = documents.findIndex(d => d.id === currentDocId);
+      if (index !== -1) {
+        documents[index] = doc;
+      }
 
-    // Update button UI
-    deployBtn.classList.toggle('published', newPublicStatus);
-    document.getElementById('deployText').textContent = newPublicStatus ? 'Published' : 'Deploy';
+      // Update button UI
+      deployBtn.classList.toggle('published', newPublicStatus);
+      const deployText = document.getElementById('deployText');
+      if (deployText) deployText.textContent = newPublicStatus ? 'Published' : 'Deploy';
 
-    // Show appropriate message
-    if (newPublicStatus) {
-      const shareUrl = `${window.location.origin}?doc=${currentDocId}`;
-      prompt('Document is now public! Share this URL:', shareUrl);
-    } else {
-      alert('Document is now private');
-    }
-  });
+      // Show appropriate message
+      if (newPublicStatus) {
+        const shareUrl = `${window.location.origin}?doc=${currentDocId}`;
+        prompt('Document is now public! Share this URL:', shareUrl);
+      } else {
+        alert('Document is now private');
+      }
+    });
+  }
 
   if (proStyleBtn && proStyleModal && closeProStyle && cancelProStyle && runProStyle && proStylePrompt && proStyleStatus) {
     const closeProStyleModal = () => {
@@ -1139,14 +1227,14 @@ function setupEditorListeners() {
       proStyleStatus.style.display = 'block';
 
       const proStylePromptText = `
-You are ProStyle, an AI that writes production-ready HTML snippets for a rich text editor.
-User request: "${request}"
+        You are ProStyle, an AI that writes production-ready HTML snippets for a rich text editor.
+        User request: "${request}"
 
-Rules:
-- Return ONLY the HTML snippet, no markdown fences, no commentary.
-- Use semantic tags, neutral modern styling, and mobile-friendly layout.
-- Prefer inline styles or scoped classes prefixed with prostyle- if needed. Avoid external assets and scripts.
-- Do not wrap in UPDATE_DOCUMENT/APPEND_CONTENT/etc.`;
+        Rules:
+        - Return ONLY the HTML snippet, no markdown fences, no commentary.
+        - Use semantic tags, neutral modern styling, and mobile-friendly layout.
+        - Prefer inline styles or scoped classes prefixed with prostyle- if needed. Avoid external assets and scripts.
+        - Do not wrap in UPDATE_DOCUMENT/APPEND_CONTENT/etc.`;
 
       try {
         const selectedModel = proStyleModelSelector.value;
@@ -1229,33 +1317,39 @@ Rules:
 
   // AI Chat
   // Capture selection on mousedown to avoid focus loss
-  aiTrigger.addEventListener('mousedown', (e) => {
-    e.preventDefault(); // Prevent focus loss
-    const selection = window.getSelection();
-    if (selection.rangeCount > 0 && !selection.isCollapsed) {
-      const range = selection.getRangeAt(0);
-      if (editor.contains(range.commonAncestorContainer) || range.commonAncestorContainer === editor) {
-        currentSelection = {
-          text: selection.toString(),
-          range: range.cloneRange()
-        };
-        console.log('Captured selection on mousedown:', currentSelection.text);
+  if (aiTrigger) {
+    aiTrigger.addEventListener('mousedown', (e) => {
+      e.preventDefault(); // Prevent focus loss
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0 && !selection.isCollapsed) {
+        const range = selection.getRangeAt(0);
+        if (editor.contains(range.commonAncestorContainer) || range.commonAncestorContainer === editor) {
+          currentSelection = {
+            text: selection.toString(),
+            range: range.cloneRange()
+          };
+          console.log('Captured selection on mousedown:', currentSelection.text);
+        }
       }
-    }
-  });
+    });
 
-  aiTrigger.addEventListener('click', () => {
-    const popup = document.getElementById('aiPopup');
-    popup.style.display = 'flex';
-    document.getElementById('aiInput').focus();
-
-    // If text is selected, show a hint in the input
-    if (currentSelection && currentSelection.text) {
-      document.getElementById('aiInput').placeholder = `Edit: "${currentSelection.text.slice(0, 20)}..."`;
-    } else {
-      document.getElementById('aiInput').placeholder = "Ask AI to write, edit, or summarize...";
-    }
-  });
+    aiTrigger.addEventListener('click', () => {
+      const popup = document.getElementById('aiPopup');
+      if (popup) {
+        popup.style.display = 'flex';
+        const aiInput = document.getElementById('aiInput');
+        if (aiInput) {
+          aiInput.focus();
+          // If text is selected, show a hint in the input
+          if (currentSelection && currentSelection.text) {
+            aiInput.placeholder = `Edit: "${currentSelection.text.slice(0, 20)}..."`;
+          } else {
+            aiInput.placeholder = "Ask AI to write, edit, or summarize...";
+          }
+        }
+      }
+    });
+  }
 
   // AI Panel Drag Logic
   let isDragging = false;
@@ -1266,9 +1360,11 @@ Rules:
   let xOffset = 0;
   let yOffset = 0;
 
-  aiHeader.addEventListener("mousedown", dragStart);
-  document.addEventListener("mouseup", dragEnd);
-  document.addEventListener("mousemove", drag);
+  if (aiHeader) {
+    aiHeader.addEventListener("mousedown", dragStart);
+    document.addEventListener("mouseup", dragEnd);
+    document.addEventListener("mousemove", drag);
+  }
 
   function dragStart(e) {
     if (e.target.closest('.ai-controls')) return; // Don't drag if clicking controls
@@ -1303,22 +1399,26 @@ Rules:
     el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
   }
 
-  closeAi.addEventListener('click', (e) => {
-    e.stopPropagation(); // Stop event bubbling
-    aiPopup.style.display = 'none';
-    aiPopup.classList.remove('split-view');
-    document.querySelector('.editor-layout').classList.remove('has-sidebar');
-    // Reset position
-    aiPopup.style.transform = 'none';
-    xOffset = 0;
-    yOffset = 0;
-  });
+  if (closeAi) {
+    closeAi.addEventListener('click', (e) => {
+      e.stopPropagation(); // Stop event bubbling
+      aiPopup.style.display = 'none';
+      aiPopup.classList.remove('split-view');
+      document.querySelector('.editor-layout').classList.remove('has-sidebar');
+      // Reset position
+      aiPopup.style.transform = 'none';
+      xOffset = 0;
+      yOffset = 0;
+    });
+  }
 
-  expandAi.addEventListener('click', () => {
-    aiPopup.classList.toggle('split-view');
-    document.querySelector('.editor-layout').classList.toggle('has-sidebar');
-    expandAi.textContent = aiPopup.classList.contains('split-view') ? '⤡' : '⤢';
-  });
+  if (expandAi) {
+    expandAi.addEventListener('click', () => {
+      aiPopup.classList.toggle('split-view');
+      document.querySelector('.editor-layout').classList.toggle('has-sidebar');
+      expandAi.textContent = aiPopup.classList.contains('split-view') ? '⤡' : '⤢';
+    });
+  }
 
   const handleSend = async () => {
     const text = aiInput.value.trim();
@@ -1331,28 +1431,28 @@ Rules:
     // Prepare context
     const docContent = editor.innerHTML;
     const prompt = `
-      You are an AI writing assistant.
-      Current Document Content (HTML):
-      ${docContent}
-      
-      User Request: ${text}
-      
-      INSTRUCTIONS:
-      1. Answer the user's question or perform the task.
-      2. **EDITING THE DOCUMENT**:
-         - To replace the ENTIRE document: Wrap content in <UPDATE_DOCUMENT>...</UPDATE_DOCUMENT>
-         - To APPEND to the end: Wrap content in <APPEND_CONTENT>...</APPEND_CONTENT>
-         - To REPLACE specific text: Wrap content in <REPLACE_TEXT target="exact text to replace">new content</REPLACE_TEXT>
-      
-      3. **FORMATTING**:
-         - Use standard HTML tags: <b>, <i>, <u>, <h1>, <h2>, <ul>, <li>, <p>, <br>.
-         - For FONTS and SIZES, use inline styles on <span> tags:
-           - Font Family: <span style="font-family: 'Inter'">...</span> (Options: Inter, Merriweather, monospace, Comic Sans MS)
-           - Font Size: <span style="font-size: 18px">...</span>
-           - Colors: <span style="color: red">...</span>
-      
-      4. If you are just chatting, do not use the tags.
-    `;
+          You are an AI writing assistant.
+          Current Document Content (HTML):
+          ${docContent}
+
+          User Request: ${text}
+
+          INSTRUCTIONS:
+          1. Answer the user's question or perform the task.
+          2. **EDITING THE DOCUMENT**:
+          - To replace the ENTIRE document: Wrap content in <UPDATE_DOCUMENT>...</UPDATE_DOCUMENT>
+          - To APPEND to the end: Wrap content in <APPEND_CONTENT>...</APPEND_CONTENT>
+          - To REPLACE specific text: Wrap content in <REPLACE_TEXT target="exact text to replace">new content</REPLACE_TEXT>
+
+          3. **FORMATTING**:
+          - Use standard HTML tags: <b>, <i>, <u>, <h1>, <h2>, <ul>, <li>, <p>, <br>.
+            - For FONTS and SIZES, use inline styles on <span> tags:
+              - Font Family: <span style="font-family: 'Inter'">...</span> (Options: Inter, Merriweather, monospace, Comic Sans MS)
+              - Font Size: <span style="font-size: 18px">...</span>
+              - Colors: <span style="color: red">...</span>
+
+              4. If you are just chatting, do not use the tags.
+              `;
 
     try {
       const selectedModel = aiModelSelector.value;
@@ -1410,10 +1510,12 @@ Rules:
     }
   };
 
-  aiSend.addEventListener('click', handleSend);
-  aiInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleSend();
-  });
+  if (aiSend) aiSend.addEventListener('click', handleSend);
+  if (aiInput) {
+    aiInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') handleSend();
+    });
+  }
 
   // Slash Menu
   document.querySelectorAll('.slash-item').forEach(item => {
@@ -1421,7 +1523,7 @@ Rules:
   });
 
   editor.addEventListener('keydown', (e) => {
-    if (slashMenu.classList.contains('visible')) {
+    if (slashMenu && slashMenu.classList.contains('visible')) {
       if (e.key === 'Enter') {
         e.preventDefault();
         const firstItem = slashMenu.querySelector('.slash-item');
@@ -1517,18 +1619,18 @@ Rules:
     helpChatMessages.scrollTop = helpChatMessages.scrollHeight;
 
     try {
-      const systemPrompt = `You are a helpful assistant for the ProEdit document editor. 
-      Your goal is to help users understand how to use the application.
-      
-      Key Features of ProEdit:
-      - **Editor**: A rich text editor for writing documents.
-      - **Formatting**: Users can format text using the toolbar (Bold, Italic, Underline, Fonts, Colors).
-      - **AI Assistant**: Users can ask the AI to write, edit, or improve text.
-      - **Deploy to Web**: Users can publish documents to a public URL.
-      - **Export**: Users can export to PDF, Word, or Markdown.
-      
-      Answer the user's question about how to use these features. Keep answers concise and helpful.
-      Do not try to edit the document content directly. Just explain how to do it.`;
+      const systemPrompt = `You are a helpful assistant for the ProEdit document editor.
+                      Your goal is to help users understand how to use the application.
+
+                      Key Features of ProEdit:
+                      - **Editor**: A rich text editor for writing documents.
+                      - **Formatting**: Users can format text using the toolbar (Bold, Italic, Underline, Fonts, Colors).
+                      - **AI Assistant**: Users can ask the AI to write, edit, or improve text.
+                      - **Deploy to Web**: Users can publish documents to a public URL.
+                      - **Export**: Users can export to PDF, Word, or Markdown.
+
+                      Answer the user's question about how to use these features. Keep answers concise and helpful.
+                      Do not try to edit the document content directly. Just explain how to do it.`;
 
       const prompt = `${systemPrompt}\n\nUser Question: ${text}`;
       const response = await generateContent(prompt);
@@ -1740,6 +1842,119 @@ Rules:
       }
     }
   });
+
+  // --- COLLABORATION LISTENERS ---
+  const shareBtn = document.getElementById('shareBtn');
+  const shareModal = document.getElementById('shareModal');
+  const sendInviteBtn = document.getElementById('sendInviteBtn');
+  const chatToggleBtn = document.getElementById('chatToggleBtn');
+  const chatWidget = document.getElementById('chatWidget');
+  const chatInput = document.getElementById('chatInput');
+  const closeChat = chatWidget?.querySelector('.close-btn');
+
+  // Share Modal
+  if (shareBtn) {
+    shareBtn.addEventListener('click', () => {
+      shareModal.style.display = 'flex';
+      updateAvatars(collabUsers);
+    });
+  }
+
+  if (sendInviteBtn) {
+    sendInviteBtn.addEventListener('click', async () => {
+      const email = document.getElementById('shareEmail').value;
+      const role = document.getElementById('shareRole').value;
+      if (!email) return;
+
+      sendInviteBtn.disabled = true;
+      sendInviteBtn.textContent = 'Inviting...';
+
+      try {
+        const { error } = await shareDocument(currentDocId, email, role);
+        if (error) throw error;
+        alert('Invitation sent!');
+        document.getElementById('shareEmail').value = '';
+      } catch (e) {
+        console.error(e);
+        alert('Failed to share: ' + e.message);
+      } finally {
+        sendInviteBtn.disabled = false;
+        sendInviteBtn.textContent = 'Invite';
+      }
+    });
+  }
+
+  // Chat
+  if (chatToggleBtn) {
+    chatToggleBtn.addEventListener('click', () => {
+      chatWidget.classList.toggle('visible');
+      if (chatWidget.classList.contains('visible')) {
+        chatInput.focus();
+      }
+    });
+  }
+
+  if (closeChat) {
+    closeChat.addEventListener('click', () => {
+      chatWidget.classList.remove('visible');
+    });
+  }
+
+  const sendChatMsg = () => {
+    const msg = chatInput.value.trim();
+    if (!msg || !collaborationManager) return;
+
+    collaborationManager.sendChat(msg);
+    chatInput.value = '';
+  };
+
+  if (chatInput) {
+    chatInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') sendChatMsg();
+    });
+    chatWidget.querySelector('.ai-send')?.addEventListener('click', sendChatMsg);
+  }
+
+  // Cursor Tracking
+  let lastCursorUpdate = 0;
+  const CURSOR_THROTTLE = 50;
+
+  const trackCursor = () => {
+    if (!collaborationManager) return;
+
+    const now = Date.now();
+    if (now - lastCursorUpdate < CURSOR_THROTTLE) return;
+
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+
+      // Only if inside editor
+      if (!editor.contains(range.commonAncestorContainer) && range.commonAncestorContainer !== editor) return;
+
+      const rect = range.getBoundingClientRect();
+      const editorScroll = document.getElementById('editorScroll');
+      const wrapperRect = editorScroll.getBoundingClientRect();
+
+      const relTop = rect.top - wrapperRect.top + editorScroll.scrollTop;
+      const relLeft = rect.left - wrapperRect.left + editorScroll.scrollLeft;
+
+      collaborationManager.sendCursor({
+        start: 0,
+        end: 0
+      }, {
+        top: relTop,
+        left: relLeft,
+        height: rect.height
+      });
+
+      lastCursorUpdate = now;
+    }
+  };
+
+  editor.addEventListener('input', trackCursor);
+  editor.addEventListener('click', trackCursor);
+  editor.addEventListener('keyup', trackCursor);
 }
 
 
@@ -2118,22 +2333,22 @@ function startTutorial() {
     overlay.className = 'tutorial-overlay';
     overlay.id = 'tutorialOverlay';
     overlay.innerHTML = `
-      <div class="tutorial-spotlight" id="tutorialSpotlight"></div>
-      <div class="tutorial-card" id="tutorialCard">
-        <div class="tutorial-header">
-          <h3 id="tutorialTitle"></h3>
-          <button class="tutorial-close" id="tutorialCloseBtn">×</button>
-        </div>
-        <div class="tutorial-content" id="tutorialContent"></div>
-        <div class="tutorial-controls">
-          <button class="tutorial-skip" id="tutorialSkip">Skip Tutorial</button>
-          <div style="display: flex; align-items: center; gap: 1rem;">
-            <span class="tutorial-progress" id="tutorialProgress"></span>
-            <button class="tutorial-next" id="tutorialNext">Next</button>
-          </div>
-        </div>
-      </div>
-    `;
+                                              <div class="tutorial-spotlight" id="tutorialSpotlight"></div>
+                                              <div class="tutorial-card" id="tutorialCard">
+                                                <div class="tutorial-header">
+                                                  <h3 id="tutorialTitle"></h3>
+                                                  <button class="tutorial-close" id="tutorialCloseBtn">×</button>
+                                                </div>
+                                                <div class="tutorial-content" id="tutorialContent"></div>
+                                                <div class="tutorial-controls">
+                                                  <button class="tutorial-skip" id="tutorialSkip">Skip Tutorial</button>
+                                                  <div style="display: flex; align-items: center; gap: 1rem;">
+                                                    <span class="tutorial-progress" id="tutorialProgress"></span>
+                                                    <button class="tutorial-next" id="tutorialNext">Next</button>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                              `;
     document.body.appendChild(overlay);
 
     // Event listeners
@@ -2211,16 +2426,16 @@ function showTutorialStep() {
 
 async function createDemoDocument() {
   const demoContent = `
-    <h1 style="font-size: 36px; font-family: 'Playfair Display', serif; margin-bottom: 0.5rem;">Meet <strong>ProEdit</strong>, the AI text editor that can...</h1>
-    
-    <p style="font-family: 'Courier Prime', monospace; margin: 1rem 0; color: #666;">learn your unique style.</p>
-    
-    <p style="margin: 1rem 0;"><em>transform raw ideas into polished prose.</em></p>
-    
-    <p style="margin: 1rem 0;"><em>accelerate your workflow, and boost your creativity.</em></p>
-    
-    <h2 style="font-size: 28px; font-family: 'Playfair Display', serif; margin: 2rem 0 1rem 0;">From emails to epic narratives, perfected instantly.</h2>
-  `;
+                                              <h1 style="font-size: 36px; font-family: 'Playfair Display', serif; margin-bottom: 0.5rem;">Meet <strong>ProEdit</strong>, the AI text editor that can...</h1>
+
+                                              <p style="font-family: 'Courier Prime', monospace; margin: 1rem 0; color: #666;">learn your unique style.</p>
+
+                                              <p style="margin: 1rem 0;"><em>transform raw ideas into polished prose.</em></p>
+
+                                              <p style="margin: 1rem 0;"><em>accelerate your workflow, and boost your creativity.</em></p>
+
+                                              <h2 style="font-size: 28px; font-family: 'Playfair Display', serif; margin: 2rem 0 1rem 0;">From emails to epic narratives, perfected instantly.</h2>
+                                              `;
 
   const newDoc = {
     id: Date.now().toString(),
@@ -2286,3 +2501,104 @@ function endTutorial() {
 
 window.startTutorial = startTutorial;
 window.endTutorial = endTutorial; // Expose for help button
+
+// --- COLLABORATION HELPERS ---
+
+function updateAvatars(users) {
+  collabUsers = users; // Update global state
+  const stack = document.getElementById('avatarStack');
+
+  if (stack) {
+    stack.innerHTML = users.map(u => `
+        <div class="avatar" style="background: ${u.color}; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; border: 2px solid #18181b; margin-left: -10px;" title="${u.email}">
+          ${u.email[0].toUpperCase()}
+        </div>
+      `).join('');
+  }
+
+  // Update Share Modal List
+  const permList = document.getElementById('permList');
+  if (permList) {
+    permList.innerHTML = users.map(u => `
+      <div class="collab-user" style="display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem 0;">
+        <div class="avatar-small" style="background: ${u.color}; color: white; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.8rem;">${u.email[0].toUpperCase()}</div>
+        <div class="user-info">
+            <div class="user-email" style="font-size: 0.9rem; color: var(--text-main);">${u.email}</div>
+            <div class="user-role" style="font-size: 0.8rem; color: #10b981;">● Online</div>
+        </div>
+      </div>
+      `).join('');
+  }
+}
+
+function renderRemoteCursor({ userId, color, coordinates }) {
+  if (userId === user.id) return; // Ignore self
+
+  let cursor = document.getElementById(`cursor-${userId}`);
+
+  if (!coordinates) {
+    if (cursor) cursor.remove();
+    return;
+  }
+
+  if (!cursor) {
+    cursor = document.createElement('div');
+    cursor.id = `cursor-${userId}`;
+    cursor.className = 'remote-cursor';
+    cursor.innerHTML = `<div class="cursor-label" style="background: ${color};">${userId.slice(0, 4)}</div>`;
+    document.getElementById('editorScroll').appendChild(cursor);
+  }
+
+  cursor.style.position = 'absolute';
+  cursor.style.top = `${coordinates.top}px`;
+  cursor.style.left = `${coordinates.left}px`;
+  cursor.style.height = `${coordinates.height}px`;
+  cursor.style.borderLeft = `2px solid ${color}`;
+  cursor.style.pointerEvents = 'none';
+  cursor.style.zIndex = '10';
+
+  const label = cursor.querySelector('.cursor-label');
+  if (label) {
+    label.style.position = 'absolute';
+    label.style.top = '-1.2em';
+    label.style.left = '-2px';
+    label.style.color = 'white';
+    label.style.fontSize = '10px';
+    label.style.padding = '1px 4px';
+    label.style.borderRadius = '2px';
+    label.style.whiteSpace = 'nowrap';
+  }
+}
+
+function addChatMessage({ userEmail, message, role, timestamp }) {
+  const chatMessages = document.getElementById('chatMessages');
+  if (!chatMessages) return;
+
+  const div = document.createElement('div');
+  const isMe = userEmail === user.email;
+
+  div.className = `chat-message ${isMe ? 'me' : 'other'}`;
+  div.style.marginBottom = '0.75rem';
+  div.style.display = 'flex';
+  div.style.flexDirection = 'column';
+  div.style.alignItems = isMe ? 'flex-end' : 'flex-start';
+
+  div.innerHTML = `
+        <div class="message-meta" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+            <span class="sender">${isMe ? 'You' : userEmail.split('@')[0]}</span>
+            <span class="time">${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+        <div class="message-content" style="
+            background: ${isMe ? 'var(--primary)' : 'var(--bg-secondary)'}; 
+            color: ${isMe ? 'white' : 'var(--text-main)'};
+            padding: 0.5rem 0.75rem;
+            border-radius: ${isMe ? '12px 12px 0 12px' : '12px 12px 12px 0'};
+            max-width: 85%;
+            font-size: 0.9rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        ">${message}</div>
+    `;
+
+  chatMessages.appendChild(div);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}

@@ -115,3 +115,96 @@ export async function deleteDocument(id) {
     return { error };
 }
 
+
+// --- SHARING & PERMISSIONS ---
+
+export async function shareDocument(docId, userEmail, role) {
+    // Check if permission already exists
+    const { data: existing } = await supabase
+        .from('document_permissions')
+        .select('*')
+        .eq('document_id', docId)
+        .eq('user_email', userEmail)
+        .single();
+
+    let result;
+    if (existing) {
+        // Update role
+        result = await supabase
+            .from('document_permissions')
+            .update({ role })
+            .eq('id', existing.id);
+    } else {
+        // Insert new
+        result = await supabase
+            .from('document_permissions')
+            .insert([{ document_id: docId, user_email: userEmail, role }]);
+    }
+    return result;
+}
+
+export async function getDocumentPermissions(docId) {
+    const { data, error } = await supabase
+        .from('document_permissions')
+        .select('*')
+        .eq('document_id', docId);
+    return { data, error };
+}
+
+export async function getSharedDocuments() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user?.email) return { data: [], error: null };
+
+    // Get doc IDs shared with me
+    const { data: perms } = await supabase
+        .from('document_permissions')
+        .select('document_id, role')
+        .eq('user_email', session.user.email);
+
+    if (!perms || perms.length === 0) return { data: [], error: null };
+
+    const docIds = perms.map(p => p.document_id);
+
+    // Fetch the actual docs
+    const { data, error } = await supabase
+        .from('documents')
+        .select('*')
+        .in('id', docIds);
+
+    // Merge role info
+    const docsWithRoles = data?.map(doc => {
+        const perm = perms.find(p => p.document_id === doc.id);
+        return { ...doc, sharedRole: perm?.role };
+    });
+
+    return { data: docsWithRoles || [], error };
+}
+
+// --- COMMENTS ---
+
+export async function addComment(docId, content, selection = null) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { error: 'Not authenticated' };
+
+    const { data, error } = await supabase
+        .from('comments')
+        .insert([{
+            document_id: docId,
+            user_id: session.user.id,
+            user_email: session.user.email,
+            content,
+            selection_range: selection
+        }])
+        .select()
+        .single();
+    return { data, error };
+}
+
+export async function getComments(docId) {
+    const { data, error } = await supabase
+        .from('comments')
+        .select('*')
+        .eq('document_id', docId)
+        .order('created_at', { ascending: true });
+    return { data, error };
+}
