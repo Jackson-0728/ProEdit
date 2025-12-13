@@ -370,10 +370,10 @@ async function renderEditor() {
               <i class="iconoir-share-android"></i> Share
             </button>
             <button class="deploy-btn" id="chatToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);">
-              <i class="iconoir-chat-bubble"></i>
+              <i class="iconoir-chat-bubble"></i> Chat
             </button>
             <button class="deploy-btn" id="commentsToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);" title="Comments">
-              <i class="iconoir-message-text"></i>
+              <i class="iconoir-message-text"></i> Comment
             </button>
 
           </div>
