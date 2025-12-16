@@ -22,21 +22,26 @@ window.renderLogin = renderLogin; // Expose to global scope for inline onclick h
 
 
 async function init() {
-  // Check for public document view first
-  const urlParams = new URLSearchParams(window.location.search);
-  const publicDocId = urlParams.get('doc');
-
-  if (publicDocId) {
-    await loadPublicDocument(publicDocId);
-    return;
-  }
-
   const { data: { session } } = await supabase.auth.getSession();
   user = session?.user;
+
+  // Check URL for doc ID
+  const urlParams = new URLSearchParams(window.location.search);
+  const docId = urlParams.get('doc');
 
   if (user) {
     await migrateLocalDocsToSupabase();
     await loadDocs();
+
+    // Check if we should open a specific doc
+    if (docId) {
+      const targetDoc = documents.find(d => d.id === docId);
+      if (targetDoc) {
+        currentDocId = docId;
+        renderEditor();
+        return; // Skip dashboard render
+      }
+    }
 
     // Check if tutorial should be shown
     const tutorialCompleted = localStorage.getItem('proedit_tutorial_completed');
@@ -46,6 +51,9 @@ async function init() {
     } else {
       renderDashboard();
     }
+  } else if (docId) {
+    // Not logged in but doc param exists -> try public doc
+    await loadPublicDocument(docId);
   } else {
     renderLanding();
   }
@@ -349,6 +357,9 @@ async function renderEditor() {
       <!--Top Bar: Menu + Toolbar-->
   <div class="top-bar">
     <div class="menu-bar">
+      <button class="icon-btn" id="backBtn" title="Back to Dashboard" style="margin-right: 1rem;">
+          <i class="iconoir-arrow-left"></i>
+      </button>
       <div class="doc-info">
         <input type="text" class="doc-title-input" id="docTitle" value="${doc.title || 'Untitled Document'}" placeholder="Untitled Document">
       </div>
@@ -815,10 +826,22 @@ async function createNewDoc() {
 
 function openDoc(id) {
   currentDocId = id;
+  // Update URL without reloading
+  const newUrl = `${window.location.origin}?doc=${id}`;
+  window.history.pushState({ path: newUrl }, '', newUrl);
   renderEditor();
 }
 
+function closeDoc() {
+  currentDocId = null;
+  // Reset URL
+  const newUrl = window.location.origin;
+  window.history.pushState({ path: newUrl }, '', newUrl);
+  renderDashboard();
+}
+
 window.openDoc = openDoc;
+window.closeDoc = closeDoc;
 
 window.deleteDoc = async (e, id) => {
   e.stopPropagation();
@@ -1188,8 +1211,7 @@ function setupEditorListeners() {
 
   if (backBtn) {
     backBtn.addEventListener('click', () => {
-      currentDocId = null;
-      renderDashboard();
+      closeDoc();
     });
   }
 
@@ -2025,6 +2047,11 @@ function setupEditorListeners() {
 
   setupComments();
   setupShareLogic();
+
+  // Resume tutorial if needed
+  if (localStorage.getItem('proedit_tutorial_phase') === 'editor') {
+    setTimeout(() => startTutorial(), 500);
+  }
 }
 
 
@@ -2353,75 +2380,87 @@ init();
 // --- TUTORIAL SYSTEM ---
 
 let currentTutorialStep = 0;
-let tutorialDemoDocId = null;
+let currentTutorialPhase = 'dashboard';
 
-const tutorialSteps = [
+const dashboardSteps = [
   {
     target: '.create-btn',
-    title: 'Welcome to ProEdit! 👋',
-    content: 'Let\'s take a quick tour to help you get started. First, click the "+ New Document" button to create your first document.',
-    action: null
-  },
+    title: 'Start Your Journey 🚀',
+    content: 'Welcome to ProEdit! To begin, click here to create your first document.',
+    action: 'wait-for-click'
+  }
+];
+
+const editorSteps = [
   {
     target: '#editor',
-    title: 'Meet the Editor ✏️',
-    content: 'This is your canvas! Start typing to create beautiful documents. The editor supports rich text and auto-saving.',
+    title: 'Your Canvas ✏️',
+    content: 'This is where the magic happens. Start typing freely, or use the slash command (/) to access AI tools.',
     action: null
   },
   {
     target: '.toolbar',
-    title: 'Formatting Tools 🎨',
-    content: 'Use the toolbar to style your text. You can change fonts, adjust sizes, add colors, and apply bold or italic styles to make your document pop.',
+    title: 'Style It Your Way 🎨',
+    content: 'Format your text with precision using the toolbar. Fonts, sizes, and colors are all at your fingertips.',
     action: null
   },
   {
-    target: '.ai-trigger',
+    target: '#proStyleBtn',
+    title: 'Design with AI ✨',
+    content: 'Need a landing page or a complex layout? Click "ProStyle" and just describe what you want. The AI will build the HTML for you.',
+    action: null
+  },
+  {
+    target: '#shareBtn',
+    title: 'Collaborate Live 👥',
+    content: 'Work together! Invite your team to edit in real-time, complete with cursor tracking and chat.',
+    action: null
+  },
+  {
+    target: '#aiTrigger',
     title: 'AI Assistant 🤖',
-    content: 'Click this button to open your AI assistant. It can help you write, edit, and improve your content. Try asking it to "continue writing" or "fix grammar"!',
-    action: null
-  },
-  {
-    target: '#deployBtn',
-    title: 'Deploy to Web 🚀',
-    content: 'Share your work with the world! Click "Deploy" to make your document public and get a shareable link. Perfect for portfolios, blogs, or sharing ideas.',
-    action: null
-  },
-  {
-    target: '.dropdown',
-    title: 'Export & More 📥',
-    content: 'Export your documents as PDF, Word, or Markdown. ProEdit makes it easy to take your work anywhere!',
+    content: 'Stuck? Access the AI Assistant here to write, edit, or summarize your content instantly.',
     action: 'complete'
   }
 ];
 
 function startTutorial() {
-  currentTutorialStep = 0;
+  // Determine phase based on context
+  if (!currentDocId) {
+    currentTutorialPhase = 'dashboard';
+  } else {
+    currentTutorialPhase = 'editor';
+    // If we just came from dashboard, ensure we start fresh
+    if (localStorage.getItem('proedit_tutorial_phase') === 'editor') {
+      currentTutorialStep = 0;
+      localStorage.removeItem('proedit_tutorial_phase');
+    }
+  }
 
-  // Add tutorial overlay to body
+  // Add tutorial overlay if missing
   if (!document.getElementById('tutorialOverlay')) {
     const overlay = document.createElement('div');
     overlay.className = 'tutorial-overlay';
     overlay.id = 'tutorialOverlay';
     overlay.innerHTML = `
-                                              <div class="tutorial-spotlight" id="tutorialSpotlight"></div>
-                                              <div class="tutorial-card" id="tutorialCard">
-                                                <div class="tutorial-header">
-                                                  <h3 id="tutorialTitle"></h3>
-                                                  <button class="tutorial-close" id="tutorialCloseBtn">×</button>
-                                                </div>
-                                                <div class="tutorial-content" id="tutorialContent"></div>
-                                                <div class="tutorial-controls">
-                                                  <button class="tutorial-skip" id="tutorialSkip">Skip Tutorial</button>
-                                                  <div style="display: flex; align-items: center; gap: 1rem;">
-                                                    <span class="tutorial-progress" id="tutorialProgress"></span>
-                                                    <button class="tutorial-next" id="tutorialNext">Next</button>
-                                                  </div>
-                                                </div>
-                                              </div>
-                                              `;
+      <div class="tutorial-spotlight" id="tutorialSpotlight"></div>
+      <div class="tutorial-card" id="tutorialCard">
+        <div class="tutorial-header">
+          <h3 id="tutorialTitle"></h3>
+          <button class="tutorial-close" id="tutorialCloseBtn">×</button>
+        </div>
+        <div class="tutorial-content" id="tutorialContent"></div>
+        <div class="tutorial-controls">
+          <button class="tutorial-skip" id="tutorialSkip">End Tour</button>
+          <div style="display: flex; align-items: center; gap: 1rem;">
+            <span class="tutorial-progress" id="tutorialProgress"></span>
+            <button class="tutorial-next" id="tutorialNext">Next</button>
+          </div>
+        </div>
+      </div>
+    `;
     document.body.appendChild(overlay);
 
-    // Event listeners
     document.getElementById('tutorialNext').addEventListener('click', nextTutorialStep);
     document.getElementById('tutorialSkip').addEventListener('click', endTutorial);
     document.getElementById('tutorialCloseBtn').addEventListener('click', endTutorial);
@@ -2431,146 +2470,84 @@ function startTutorial() {
 }
 
 function showTutorialStep() {
-  if (currentTutorialStep >= tutorialSteps.length) {
-    endTutorial();
+  const steps = currentTutorialPhase === 'dashboard' ? dashboardSteps : editorSteps;
+
+  if (currentTutorialStep >= steps.length) {
+    if (currentTutorialPhase === 'editor') {
+      endTutorial();
+    }
     return;
   }
 
-  const step = tutorialSteps[currentTutorialStep];
+  const step = steps[currentTutorialStep];
   const overlay = document.getElementById('tutorialOverlay');
   const spotlight = document.getElementById('tutorialSpotlight');
   const card = document.getElementById('tutorialCard');
+  const nextBtn = document.getElementById('tutorialNext');
 
   overlay.style.display = 'block';
 
   // Update content
   document.getElementById('tutorialTitle').textContent = step.title;
   document.getElementById('tutorialContent').textContent = step.content;
-  document.getElementById('tutorialProgress').textContent = `${currentTutorialStep + 1} of ${tutorialSteps.length}`;
+  document.getElementById('tutorialProgress').textContent = `${currentTutorialStep + 1} of ${steps.length}`;
 
-  // Update button text for last step
-  const nextBtn = document.getElementById('tutorialNext');
-  nextBtn.textContent = currentTutorialStep === tutorialSteps.length - 1 ? 'Finish' : 'Next';
+  // Button State
+  if (step.action === 'wait-for-click') {
+    nextBtn.style.display = 'none'; // Hide next button, force user action
+    // Add listener to the target to advance
+    const target = document.querySelector(step.target);
+    if (target) {
+      target.addEventListener('click', advanceFromDashboard, { once: true });
+    }
+  } else {
+    nextBtn.style.display = 'block';
+    nextBtn.textContent = currentTutorialStep === steps.length - 1 ? 'Finish' : 'Next';
+  }
 
-  // Position spotlight and card
+  // Position spotlight
   const targetEl = document.querySelector(step.target);
   if (targetEl) {
     const rect = targetEl.getBoundingClientRect();
-
-    // Position spotlight
     spotlight.style.top = `${rect.top - 10}px`;
     spotlight.style.left = `${rect.left - 10}px`;
     spotlight.style.width = `${rect.width + 20}px`;
     spotlight.style.height = `${rect.height + 20}px`;
 
-    // Position card
+    // Smart positioning for card
     let cardTop = rect.bottom + 20;
     let cardLeft = rect.left;
 
-    // Adjust if card goes off screen
-    if (cardTop + 300 > window.innerHeight) {
-      cardTop = rect.top - 320;
-    }
-    if (cardLeft + 380 > window.innerWidth) {
-      cardLeft = window.innerWidth - 400;
-    }
-    if (cardLeft < 20) {
-      cardLeft = 20;
-    }
+    if (cardTop + 200 > window.innerHeight) cardTop = rect.top - 220;
+    if (cardLeft + 400 > window.innerWidth) cardLeft = window.innerWidth - 420;
+    if (cardLeft < 20) cardLeft = 20;
 
     card.style.top = `${cardTop}px`;
     card.style.left = `${cardLeft}px`;
   }
-
-  // Handle special actions for certain steps
-  if (step.action === 'create-doc' && currentTutorialStep === 0) {
-    // Wait for user to create doc, then auto-proceed
-    const createBtn = document.querySelector('.create-btn');
-    const originalOnClick = createBtn.onclick;
-    createBtn.onclick = async function () {
-      await createDemoDocument();
-      setTimeout(() => nextTutorialStep(), 1000);
-    };
-  }
 }
 
-async function createDemoDocument() {
-  const demoContent = `
-                                              <h1 style="font-size: 36px; font-family: 'Playfair Display', serif; margin-bottom: 0.5rem;">Meet <strong>ProEdit</strong>, the AI text editor that can...</h1>
-
-                                              <p style="font-family: 'Courier Prime', monospace; margin: 1rem 0; color: #666;">learn your unique style.</p>
-
-                                              <p style="margin: 1rem 0;"><em>transform raw ideas into polished prose.</em></p>
-
-                                              <p style="margin: 1rem 0;"><em>accelerate your workflow, and boost your creativity.</em></p>
-
-                                              <h2 style="font-size: 28px; font-family: 'Playfair Display', serif; margin: 2rem 0 1rem 0;">From emails to epic narratives, perfected instantly.</h2>
-                                              `;
-
-  const newDoc = {
-    id: Date.now().toString(),
-    user_id: user.id,
-    title: 'Meet ProEdit',
-    content: demoContent,
-    is_public: false
-  };
-
-  const { data, error } = await createDocument(newDoc);
-  if (!error && data) {
-    documents.unshift(data);
-    tutorialDemoDocId = data.id;
-    currentDocId = data.id;
-    renderEditor();
-  }
+function advanceFromDashboard() {
+  // Set flag for editor phase
+  localStorage.setItem('proedit_tutorial_phase', 'editor');
+  // Overlay will be removed by the page render/update
+  document.getElementById('tutorialOverlay').style.display = 'none';
 }
 
 function nextTutorialStep() {
-  // Handle step-specific actions
-  const currentStep = tutorialSteps[currentTutorialStep];
-
-  if (currentStep.action === 'complete') {
-    endTutorial();
-    return;
-  }
-
-  // Special handling for first step - create demo doc
-  if (currentTutorialStep === 0) {
-    // Hide overlay temporarily while document loads
-    document.getElementById('tutorialOverlay').style.display = 'none';
-
-    createDemoDocument().then(() => {
-      currentTutorialStep++;
-      // Wait for editor to render, then show next step
-      // Use polling to ensure overlay is found and shown
-      let attempts = 0;
-      const interval = setInterval(() => {
-        const overlay = document.getElementById('tutorialOverlay');
-        if (overlay) {
-          overlay.style.display = 'block';
-          showTutorialStep();
-          clearInterval(interval);
-        }
-        attempts++;
-        if (attempts > 20) clearInterval(interval); // Stop after 2 seconds
-      }, 100);
-    });
-    return;
-  }
-
   currentTutorialStep++;
   showTutorialStep();
 }
 
 function endTutorial() {
   const overlay = document.getElementById('tutorialOverlay');
-  if (overlay) {
-    overlay.style.display = 'none';
-  }
+  if (overlay) overlay.style.display = 'none';
   localStorage.setItem('proedit_tutorial_completed', 'true');
+  localStorage.removeItem('proedit_tutorial_phase');
 }
 
 window.startTutorial = startTutorial;
-window.endTutorial = endTutorial; // Expose for help button
+window.endTutorial = endTutorial;
 
 // --- COLLABORATION HELPERS ---
 
@@ -2841,4 +2818,29 @@ window.updateRoleAction = async (email, newRole) => {
   }
   loadSharePermissions();
 };
+window.addEventListener('popstate', () => {
+  // Basic handling for back/forward browser buttons
+  const urlParams = new URLSearchParams(window.location.search);
+  const docId = urlParams.get('doc');
 
+  if (docId && user) {
+    // If we have a docId and user is logged in, try to open it
+    // We might need to ensure docs are loaded, but usually they are if we are in app
+    const targetDoc = documents.find(d => d.id === docId);
+    if (targetDoc) {
+      currentDocId = docId;
+      renderEditor();
+    } else {
+      // Fallback if not found in loaded docs (maybe refresh needed, or invalid)
+      // For now, just go to dashboard if valid doc not found
+      closeDoc();
+    }
+  } else if (user) {
+    // No docId, show dashboard
+    if (currentDocId) {
+      closeDoc();
+    } else {
+      renderDashboard();
+    }
+  }
+});
