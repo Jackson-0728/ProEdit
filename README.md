@@ -1,89 +1,36 @@
-# ProEdit - Intelligent Writing Assistant
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-> **Writing, Reimagined with AI.**
+## Getting Started
 
-ProEdit is a modern, collaborative text editor designed for speed and intelligence. It combines a distraction-free writing environment with advanced AI capabilities and real-time collaboration tools, helping teams create content that stands out.
+First, run the development server:
 
-![ProEdit Screenshot](https://github.com/Jackson-0728/ProEdit/blob/main/ProEdit%20Screenshot.png?raw=true)
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-## ✨ Key Features
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-### 🤖 AI-Powered Workflow
--   **Smart Assistance**: Ask Gemini to write, rewrite, or summarize content directly in the editor.
--   **ProStyle Component Builder**: Describe a UI component or layout, and watch ProStyle build it instantly using HTML/CSS.
--   **Contextual Editing**: Highlight any text to simplify, expand, or improve it with a single click.
+You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 
-### 👥 Real-Time Collaboration
--   **Co-Authoring**: Edit documents simultaneously with your team.
--   **Live Presence**: See who is viewing the document and where their cursor is in real-time.
--   **In-App Chat**: Discuss changes without leaving the document context.
--   **Granular Permissions**: Share with specific users as Viewers, Commenters, or Editors.
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-### 🚀 Modern Editor
--   **Rich Text**: All the formatting tools you need (Fonts, Colors, Lists).
--   **Slash Commands**: Type `/` to access AI tools and shortcuts instantly.
--   **Smart Navigation**: URL-based routing allows you to bookmark or share deep links to specific documents.
--   **Cloud Sync**: Documents are auto-saved and synced across devices via Supabase.
+## Learn More
 
-## 🛠 Tech Stack
+To learn more about Next.js, take a look at the following resources:
 
--   **Frontend**: Vanilla JavaScript (ES6+), CSS3 Variables, HTML5 (Vite)
--   **Backend**: Node.js & Express (Proxy for AI requests)
--   **Database**: Supabase (PostgreSQL) + Realtime
--   **AI Model**: Google Gemini 2.5 (Flash, Lite, Pro)
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-## 🚀 Getting Started
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-### Prerequisites
--   Node.js (v16+)
--   Supabase Account
--   Google Cloud Project (for Gemini API)
+## Deploy on Vercel
 
-### Installation
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-1.  **Clone the Repository**
-    ```bash
-    git clone https://github.com/Jackson-0728/ProEdit.git
-    cd ProEdit
-    ```
-
-2.  **Install Dependencies**
-    ```bash
-    npm install
-    ```
-
-3.  **Environment Setup**
-    Create a `.env` file in the root directory:
-    ```env
-    # Supabase (Frontend & Auth)
-    VITE_SUPABASE_URL=your_supabase_url
-    VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-
-    # Gemini AI (Server-side)
-    VITE_GEMINI_API_KEY=your_gemini_api_key
-    ```
-
-4.  **Database & Auth Setup**
-    -   In Supabase, enable **Email/Password** Auth.
-    -   Run the `supabase_setup.sql` script in your Supabase SQL Editor to create tables for Documents, Comments, and Permissions.
-
-5.  **Run the Application**
-    You need two terminals:
-
-    *Terminal 1: Backend Server (AI Proxy)*
-    ```bash
-    npm run server
-    ```
-
-    *Terminal 2: Frontend Client*
-    ```bash
-    npm run dev
-    ```
-
-    Open **http://localhost:5173** to start writing!
-
-## 🤝 Contributing
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 📄 License
-Copyright (c) 2025 Jackson Liu. All rights reserved.
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
