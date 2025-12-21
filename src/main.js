@@ -2,7 +2,7 @@ import './style.css';
 import { generateContent, evaluateModels } from './api/gemini.js';
 import { CollaborationManager } from './api/collaboration.js';
 import {
-  supabase, signIn, signUp, signOut, signInWithProvider, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument, getDocumentPermissions, addComment, getComments, updateComment, deleteComment
+  supabase, signIn, signUp, signOut, signInWithProvider, resetPassword, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument, getDocumentPermissions, addComment, getComments, updateComment, deleteComment
 } from './api/supabase.js';
 
 
@@ -24,6 +24,13 @@ window.renderLogin = renderLogin; // Expose to global scope for inline onclick h
 async function init() {
   const { data: { session } } = await supabase.auth.getSession();
   user = session?.user;
+
+  // Check remember me preference
+  if (user && sessionStorage.getItem('proedit_remember_me') === 'false') {
+    // User didn't check remember me and came back, sign them out
+    await signOut();
+    user = null;
+  }
 
   // Check URL for doc ID
   const urlParams = new URLSearchParams(window.location.search);
@@ -68,6 +75,14 @@ async function init() {
     }
   });
 }
+
+// Handle remember me functionality on page close
+window.addEventListener('beforeunload', async () => {
+  if (sessionStorage.getItem('proedit_remember_me') === 'false') {
+    // Don't actually sign out here as it's async and won't complete
+    // Just clear the flag - we check it on init
+  }
+});
 
 
 // --- VIEWS ---
@@ -115,69 +130,121 @@ function renderLanding() {
 function renderLogin() {
   app.innerHTML = `
     <div class="login-container">
-    <div class="login-card">
-      <div class="brand" style="justify-content: center; margin-bottom: 1rem;">ProEdit</div>
-      <h1 class="login-title">Welcome back</h1>
-      <p class="login-subtitle">Sign in to your account to continue</p>
-
-      <div class="error-msg" id="errorMsg"></div>
-
-      <form id="loginForm">
-        <div class="form-group">
-          <label class="form-label">Email</label>
-          <input type="email" class="form-input" id="email" placeholder="name@example.com" required>
+      <div class="login-card">
+        <div class="login-header">
+          <div class="brand-logo">ProEdit</div>
+          <p class="brand-tagline">Your AI-powered text editing assistant.</p>
         </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input type="password" class="form-input" id="password" placeholder="••••••••" required>
+
+        <div class="auth-tabs">
+          <button class="auth-tab active" id="loginTab">Log In</button>
+          <button class="auth-tab" id="signupTab">Sign Up</button>
         </div>
-        <button type="submit" class="auth-btn">Sign In</button>
-      </form>
 
-      <div class="oauth-buttons">
-        <button class="oauth-btn" id="googleBtn">
-          <img src="https://lh3.googleusercontent.com/COxitqgJr1sJnIDe8-CaWOoch7XphdCqkGxbWA602145+6WjSc0unJ0AzLPr6uI=w128-h128-e365-rj-sc0x00ffffff" class="oauth-icon" alt="Google">
-            Sign in with Google
-        </button>
-        <button class="oauth-btn" id="githubBtn">
-          <img src="https://images.icon-icons.com/3685/PNG/512/github_logo_icon_229278.png" class="oauth-icon" alt="GitHub">
-            Sign in with GitHub
-        </button>
-      </div>
+        <div class="error-msg" id="errorMsg"></div>
 
-      <div class="auth-link">
-        Don't have an account? <a id="toggleAuth">Sign up</a>
+        <form id="loginForm" class="auth-form">
+          <div class="form-group">
+            <label class="form-label">Email</label>
+            <div class="input-with-icon">
+              <i class="iconoir-mail"></i>
+              <input type="email" class="form-input" id="email" placeholder="Enter your email" required>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">Password</label>
+            <div class="input-with-icon">
+              <i class="iconoir-lock"></i>
+              <input type="password" class="form-input" id="password" placeholder="Enter your password" required>
+              <button type="button" class="password-toggle" id="passwordToggle">
+                <i class="iconoir-eye-off"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-footer">
+            <label class="remember-me">
+              <input type="checkbox" id="rememberMe">
+              <span>Remember me</span>
+            </label>
+            <a href="#" class="forgot-password">Forgot Password?</a>
+          </div>
+
+          <button type="submit" class="auth-btn">
+            <span id="btnText">Log In</span>
+          </button>
+        </form>
+
+        <div class="divider">
+          <span>or continue with</span>
+        </div>
+
+        <div class="oauth-buttons">
+          <button class="oauth-btn" id="googleBtn">
+            <i class="iconoir-google-circle"></i>
+            Google
+          </button>
+          <button class="oauth-btn" id="githubBtn">
+            <i class="iconoir-github-circle"></i>
+            GitHub
+          </button>
+        </div>
       </div>
-    </div>
     </div>
   `;
 
+  const loginTab = document.getElementById('loginTab');
+  const signupTab = document.getElementById('signupTab');
   const form = document.getElementById('loginForm');
-  const toggleBtn = document.getElementById('toggleAuth');
-  const title = document.querySelector('.login-title');
   const btn = document.querySelector('.auth-btn');
-  const subtitle = document.querySelector('.login-subtitle');
+  const btnText = document.getElementById('btnText');
+  const errorMsg = document.getElementById('errorMsg');
+  const passwordInput = document.getElementById('password');
+  const passwordToggle = document.getElementById('passwordToggle');
+  const forgotPassword = document.querySelector('.forgot-password');
+  const rememberMeContainer = document.querySelector('.remember-me');
   let isSignUp = false;
 
-  toggleBtn.addEventListener('click', () => {
-    isSignUp = !isSignUp;
-    title.textContent = isSignUp ? 'Create account' : 'Welcome back';
-    subtitle.textContent = isSignUp ? 'Start your writing journey today' : 'Sign in to your account to continue';
-    btn.textContent = isSignUp ? 'Sign Up' : 'Sign In';
-    toggleBtn.textContent = isSignUp ? 'Sign in' : 'Sign up';
-    document.querySelector('.auth-link').childNodes[0].textContent = isSignUp ? 'Already have an account? ' : "Don't have an account? ";
+  // Password toggle
+  passwordToggle.addEventListener('click', () => {
+    const type = passwordInput.type === 'password' ? 'text' : 'password';
+    passwordInput.type = type;
+    passwordToggle.querySelector('i').className = type === 'password' ? 'iconoir-eye-off' : 'iconoir-eye';
   });
 
+  // Tab switching
+  loginTab.addEventListener('click', () => {
+    if (isSignUp) {
+      isSignUp = false;
+      loginTab.classList.add('active');
+      signupTab.classList.remove('active');
+      btnText.textContent = 'Log In';
+      forgotPassword.style.display = 'block';
+      rememberMeContainer.style.display = 'flex';
+    }
+  });
+
+  signupTab.addEventListener('click', () => {
+    if (!isSignUp) {
+      isSignUp = true;
+      signupTab.classList.add('active');
+      loginTab.classList.remove('active');
+      btnText.textContent = 'Sign Up';
+      forgotPassword.style.display = 'none';
+      rememberMeContainer.style.display = 'none';
+    }
+  });
+
+  // Form submission
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('email').value;
     const password = document.getElementById('password').value;
-    const errorMsg = document.getElementById('errorMsg');
-
-
+    const rememberMe = document.getElementById('rememberMe').checked;
 
     btn.disabled = true;
-    btn.textContent = 'Loading...';
+    btnText.textContent = 'Loading...';
     errorMsg.style.display = 'none';
 
     let result;
@@ -185,33 +252,62 @@ function renderLogin() {
       result = await signUp(email, password);
     } else {
       result = await signIn(email, password);
+
+      // Handle remember me functionality
+      if (result.data?.session && !rememberMe) {
+        // Store a flag so we know to sign out on page close
+        sessionStorage.setItem('proedit_remember_me', 'false');
+      } else if (result.data?.session && rememberMe) {
+        sessionStorage.setItem('proedit_remember_me', 'true');
+      }
     }
 
     if (result.error) {
       console.error("Auth Error:", result.error);
       errorMsg.style.display = 'block';
+      errorMsg.className = 'error-msg error';
 
       if (result.error.message.includes("Email not confirmed")) {
-        errorMsg.innerHTML = `
-          Please check your email to confirm your account.< br >
-  <small>If you don't see it, check your spam folder.</small>
-`;
+        errorMsg.innerHTML = `Please check your email to confirm your account.< br > <small>If you don't see it, check your spam folder.</small>`;
       } else {
         errorMsg.textContent = result.error.message;
       }
 
       btn.disabled = false;
-      btn.textContent = isSignUp ? 'Sign Up' : 'Sign In';
+      btnText.textContent = isSignUp ? 'Sign Up' : 'Log In';
     } else if (isSignUp && !result.data.session) {
-      // Sign up successful but email confirmation needed
       errorMsg.style.display = 'block';
-      errorMsg.style.background = '#dbeafe';
-      errorMsg.style.color = '#1e40af';
-      errorMsg.innerHTML = `
-        Account created! Please check your email to confirm your account before logging in.
-      `;
+      errorMsg.className = 'error-msg success';
+      errorMsg.innerHTML = `Account created! Please check your email to confirm your account before logging in.`;
       btn.disabled = false;
-      btn.textContent = 'Sign Up';
+      btnText.textContent = 'Sign Up';
+    }
+  });
+
+  // Forgot password handler
+  forgotPassword.addEventListener('click', async (e) => {
+    e.preventDefault();
+
+    const email = document.getElementById('email').value;
+    if (!email) {
+      errorMsg.style.display = 'block';
+      errorMsg.className = 'error-msg error';
+      errorMsg.textContent = 'Please enter your email address first.';
+      return;
+    }
+
+    const confirmReset = confirm(`Send password reset email to ${email}?`);
+    if (!confirmReset) return;
+
+    const { error } = await resetPassword(email);
+
+    errorMsg.style.display = 'block';
+    if (error) {
+      errorMsg.className = 'error-msg error';
+      errorMsg.textContent = `Error: ${error.message} `;
+    } else {
+      errorMsg.className = 'error-msg success';
+      errorMsg.innerHTML = `Password reset link sent to ${email} !<br><small>Check your inbox and spam folder.</small>`;
     }
   });
 
@@ -261,18 +357,18 @@ function renderDashboard() {
     }
 
     grid.innerHTML = docsToRender.map(doc => `
-  <div class="doc-card" onclick = "window.openDoc('${doc.id}')">
-        <button class="delete-btn" onclick="window.deleteDoc(event, '${doc.id}')" title="Delete">
-        <i class="iconoir-trash"></i>
-        </button>
-        <div class="doc-preview">
-          ${doc.content.replace(/<[^>]*>/g, '').slice(0, 150) || 'Empty document...'}
-        </div>
-        <div class="doc-meta">
-          <div class="doc-title">${doc.title || 'Untitled'}</div>
-          <div class="doc-date">${new Date(doc.updatedAt).toLocaleDateString()}</div>
-        </div>
-      </div>
+  <div class="doc-card" onclick="window.openDoc('${doc.id}')">
+    <button class="delete-btn" onclick="window.deleteDoc(event, '${doc.id}')" title="Delete">
+      <i class="iconoir-trash"></i>
+    </button>
+    <div class="doc-preview">
+      ${doc.content.replace(/<[^>]*>/g, '').slice(0, 150) || 'Empty document...'}
+    </div>
+    <div class="doc-meta">
+      <div class="doc-title">${doc.title || 'Untitled'}</div>
+      <div class="doc-date">${new Date(doc.updatedAt).toLocaleDateString()}</div>
+    </div>
+  </div>
   `).join('');
   };
 
@@ -343,51 +439,51 @@ async function renderEditor() {
 
   app.innerHTML = `
   <div class="editor-layout">
-      <!--Beta Top Bar-->
-      <div id="betaBar" style="background: #18181b; color: white; padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-            <span style="background: #3b82f6; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: bold;">BETA</span>
-            <span>ProEdit is currently in beta. We appreciate your feedback!</span>
-        </div>
-        <div style="display: flex; gap: 1rem; align-items: center;">
-            <button id="betaFeedback" style="background: transparent; color: white; border: 1px solid #3f3f46; padding: 0.25rem 0.75rem; border-radius: 0.25rem; cursor: pointer;">Give Feedback</button>
-            <button id="closeBeta" style="background: transparent; border: none; color: #a1a1aa; cursor: pointer; font-size: 1.2rem;">×</button>
-        </div>
-      </div>
-      <!--Top Bar: Menu + Toolbar-->
-  <div class="top-bar">
-    <div class="menu-bar">
-      <button class="icon-btn" id="backBtn" title="Back to Dashboard" style="margin-right: 1rem;">
-          <i class="iconoir-arrow-left"></i>
-      </button>
-      <div class="doc-info">
-        <input type="text" class="doc-title-input" id="docTitle" value="${doc.title || 'Untitled Document'}" placeholder="Untitled Document">
-      </div>
-      <div style="flex: 1"></div>
+    <!--Beta Top Bar-->
+    <div id="betaBar" style="background: #18181b; color: white; padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
       <div style="display: flex; gap: 0.5rem; align-items: center;">
-        <button class="prostyle-btn" id="proStyleBtn" title="Generate HTML components with AI">
-          <span class="prostyle-icon">AI</span>
-          <span>ProStyle</span>
+        <span style="background: #3b82f6; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: bold;">BETA</span>
+        <span>ProEdit is currently in beta. We appreciate your feedback!</span>
+      </div>
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <button id="betaFeedback" style="background: transparent; color: white; border: 1px solid #3f3f46; padding: 0.25rem 0.75rem; border-radius: 0.25rem; cursor: pointer;">Give Feedback</button>
+        <button id="closeBeta" style="background: transparent; border: none; color: #a1a1aa; cursor: pointer; font-size: 1.2rem;">×</button>
+      </div>
+    </div>
+    <!--Top Bar: Menu + Toolbar-->
+    <div class="top-bar">
+      <div class="menu-bar">
+        <button class="icon-btn" id="backBtn" title="Back to Dashboard" style="margin-right: 1rem;">
+          <i class="iconoir-arrow-left"></i>
         </button>
-        <button class="deploy-btn ${doc.is_public ? 'published' : ''}" id="deployBtn" title="Deploy to Web">
-          <i class="iconoir-rocket"></i>
-          <span id="deployText">${doc.is_public ? 'Published' : 'Deploy'}</span>
-        </button>
+        <div class="doc-info">
+          <input type="text" class="doc-title-input" id="docTitle" value="${doc.title || 'Untitled Document'}" placeholder="Untitled Document">
+        </div>
+        <div style="flex: 1"></div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <button class="prostyle-btn" id="proStyleBtn" title="Generate HTML components with AI">
+            <span class="prostyle-icon">AI</span>
+            <span>ProStyle</span>
+          </button>
+          <button class="deploy-btn ${doc.is_public ? 'published' : ''}" id="deployBtn" title="Deploy to Web">
+            <i class="iconoir-rocket"></i>
+            <span id="deployText">${doc.is_public ? 'Published' : 'Deploy'}</span>
+          </button>
 
-            <!-- Collaborative Tools -->
-            <div class="avatars-stack" id="avatarStack"></div>
+          <!-- Collaborative Tools -->
+          <div class="avatars-stack" id="avatarStack"></div>
 
-            <button class="deploy-btn" id="shareBtn" style="border-color: var(--primary); color: var(--primary);">
-              <i class="iconoir-share-android"></i> Share
-            </button>
-            <button class="deploy-btn" id="chatToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);">
-              <i class="iconoir-chat-bubble"></i> Chat
-            </button>
-            <button class="deploy-btn" id="commentsToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);" title="Comments">
-              <i class="iconoir-message-text"></i> Comment
-            </button>
+          <button class="deploy-btn" id="shareBtn" style="border-color: var(--primary); color: var(--primary);">
+            <i class="iconoir-share-android"></i> Share
+          </button>
+          <button class="deploy-btn" id="chatToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);">
+            <i class="iconoir-chat-bubble"></i> Chat
+          </button>
+          <button class="deploy-btn" id="commentsToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);" title="Comments">
+            <i class="iconoir-message-text"></i> Comment
+          </button>
 
-          </div>
+        </div>
       </div>
 
       <!-- Toolbar (Existing) -->
@@ -485,13 +581,13 @@ async function renderEditor() {
       <!-- Comments Sidebar -->
       <div class="comments-sidebar" id="commentsSidebar" style="display: none;">
         <div class="comments-header">
-           <span>Comments</span>
-           <button class="close-btn" id="closeComments">×</button>
+          <span>Comments</span>
+          <button class="close-btn" id="closeComments">×</button>
         </div>
         <div class="comments-list" id="commentsList"></div>
         <div class="comment-input-area">
-           <textarea placeholder="Add a comment..." id="newCommentInput"></textarea>
-           <button class="primary-btn" id="addCommentBtn">Post</button>
+          <textarea placeholder="Add a comment..." id="newCommentInput"></textarea>
+          <button class="primary-btn" id="addCommentBtn">Post</button>
         </div>
       </div>
     </div>
@@ -505,12 +601,15 @@ async function renderEditor() {
     <div class="chat-widget" id="chatWidget">
       <div class="chat-header">
         <span>Chat</span>
-        <button class="close-btn" onclick="document.getElementById('chatWidget').classList.remove('visible')">×</button>
+        <div class="ai-controls">
+          <button class="ai-btn-icon" id="clearCollabChat" title="Clear chat"><i class="iconoir-trash"></i></button>
+          <button class="ai-btn-icon" id="closeCollabChat" title="Close">×</button>
+        </div>
       </div>
       <div class="chat-messages" id="chatMessages"></div>
       <div class="chat-input-area">
         <input type="text" class="chat-input" id="chatInput" placeholder="Type a message...">
-          <button class="ai-send" onclick="sendChat()" style="width: 32px; height: 32px;"><i class="iconoir-send"></i></button>
+          <button class="ai-send" type="button" style="width: 32px; height: 32px;"><i class="iconoir-send"></i></button>
       </div>
     </div>
 
@@ -579,6 +678,7 @@ async function renderEditor() {
             <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
             <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
           </select>
+          <button class="ai-btn-icon" id="clearAiChat" title="Clear chat"><i class="iconoir-trash"></i></button>
           <button class="ai-btn-icon" id="expandAi" title="Expand"><i class="iconoir-expand"></i></button>
           <button class="ai-btn-icon" id="closeAi" title="Close"><i class="iconoir-xmark-circle"></i></button>
         </div>
@@ -748,7 +848,8 @@ async function renderEditor() {
                   <span>ProEdit Assistant</span>
                 </div>
                 <div class="ai-controls">
-                  <button class="ai-btn-icon" id="closeHelpChat">×</button>
+                  <button class="ai-btn-icon" id="clearHelpChat" title="Clear chat"><i class="iconoir-trash"></i></button>
+                  <button class="ai-btn-icon" id="closeHelpChat" title="Close">×</button>
                 </div>
               </div>
               <div class="help-chat-messages" id="helpChatMessages">
@@ -2083,12 +2184,20 @@ function setupBetaBar() {
 }
 
 function addAiMessage(text, sender = 'ai') {
+  // Backward compatible signature: addAiMessage(text, sender, {persist})
+  const options = arguments.length >= 3 && typeof arguments[2] === 'object' ? arguments[2] : {};
+  const { persist = true } = options;
+
+  const safeText = typeof text === 'string' ? text : String(text ?? '');
+  if (persist) persistAiChatMessage({ sender, text: safeText, timestamp: new Date().toISOString() });
+
   const msgs = document.getElementById('aiMessages');
+  if (!msgs) return;
   const div = document.createElement('div');
   div.className = `ai-message ${sender}`;
 
   // Format markdown-ish
-  const formatted = text
+  const formatted = safeText
     .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
     .replace(/\*(.*?)\*/g, '<i>$1</i>')
     .replace(/\n/g, '<br>');
@@ -2443,22 +2552,22 @@ function startTutorial() {
     overlay.className = 'tutorial-overlay';
     overlay.id = 'tutorialOverlay';
     overlay.innerHTML = `
-      <div class="tutorial-spotlight" id="tutorialSpotlight"></div>
-      <div class="tutorial-card" id="tutorialCard">
-        <div class="tutorial-header">
-          <h3 id="tutorialTitle"></h3>
-          <button class="tutorial-close" id="tutorialCloseBtn">×</button>
-        </div>
-        <div class="tutorial-content" id="tutorialContent"></div>
-        <div class="tutorial-controls">
-          <button class="tutorial-skip" id="tutorialSkip">End Tour</button>
-          <div style="display: flex; align-items: center; gap: 1rem;">
-            <span class="tutorial-progress" id="tutorialProgress"></span>
-            <button class="tutorial-next" id="tutorialNext">Next</button>
-          </div>
-        </div>
-      </div>
-    `;
+                                              <div class="tutorial-spotlight" id="tutorialSpotlight"></div>
+                                              <div class="tutorial-card" id="tutorialCard">
+                                                <div class="tutorial-header">
+                                                  <h3 id="tutorialTitle"></h3>
+                                                  <button class="tutorial-close" id="tutorialCloseBtn">×</button>
+                                                </div>
+                                                <div class="tutorial-content" id="tutorialContent"></div>
+                                                <div class="tutorial-controls">
+                                                  <button class="tutorial-skip" id="tutorialSkip">End Tour</button>
+                                                  <div style="display: flex; align-items: center; gap: 1rem;">
+                                                    <span class="tutorial-progress" id="tutorialProgress"></span>
+                                                    <button class="tutorial-next" id="tutorialNext">Next</button>
+                                                  </div>
+                                                </div>
+                                              </div>
+                                              `;
     document.body.appendChild(overlay);
 
     document.getElementById('tutorialNext').addEventListener('click', nextTutorialStep);
@@ -2617,12 +2726,58 @@ function renderRemoteCursor({ userId, color, coordinates }) {
   }
 }
 
-function addChatMessage({ userEmail, message, role, timestamp }) {
+function getCollabChatKey() {
+  if (!user?.id || !currentDocId) return null;
+  return collabChatStorageKey(user.id, currentDocId);
+}
+
+function persistCollabChatMessage({ userEmail, message, role, timestamp }) {
+  const key = getCollabChatKey();
+  if (!key) return;
+
+  const entry = { userEmail, message, role, timestamp };
+  const history = readPersistedMessages(key);
+  const last = history[history.length - 1];
+  if (
+    last &&
+    last.userEmail === entry.userEmail &&
+    last.message === entry.message &&
+    last.role === entry.role &&
+    last.timestamp === entry.timestamp
+  ) {
+    return;
+  }
+
+  history.push(entry);
+  writePersistedMessages(key, trimToMaxMessages(history));
+}
+
+function restoreCollabChatMessages() {
+  const key = getCollabChatKey();
+  const chatMessages = document.getElementById('chatMessages');
+  if (!key || !chatMessages) return;
+
+  chatMessages.innerHTML = '';
+  const history = readPersistedMessages(key);
+  history.forEach((msg) => addChatMessage(msg, { persist: false }));
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+function clearCollabChatMessages() {
+  const key = getCollabChatKey();
+  if (key) removeLocalStorageKey(key);
+  const chatMessages = document.getElementById('chatMessages');
+  if (chatMessages) chatMessages.innerHTML = '';
+}
+
+function addChatMessage({ userEmail, message, role, timestamp }, { persist = true } = {}) {
+  if (persist) persistCollabChatMessage({ userEmail, message, role, timestamp });
+
   const chatMessages = document.getElementById('chatMessages');
   if (!chatMessages) return;
 
   const div = document.createElement('div');
-  const isMe = userEmail === user.email;
+  const isMe = userEmail && user?.email && userEmail === user.email;
   const isAi = role === 'ai';
 
   div.className = `chat-message ${isMe ? 'me' : 'other'}`;
@@ -2631,16 +2786,16 @@ function addChatMessage({ userEmail, message, role, timestamp }) {
   div.style.flexDirection = 'column';
   div.style.alignItems = isMe && !isAi ? 'flex-end' : 'flex-start'; // AI always left aligned or distinct
 
-  const senderName = isAi ? '✨ AI Assistant' : (isMe ? 'You' : userEmail.split('@')[0]);
+  const senderName = isAi ? '✨ AI Assistant' : (isMe ? 'You' : (userEmail ? userEmail.split('@')[0] : 'Unknown'));
   const bg = isAi ? 'linear-gradient(135deg, #a855f7, #ec4899)' : (isMe ? 'var(--primary)' : 'var(--bg-secondary)');
   const color = isAi || isMe ? 'white' : 'var(--text-main)';
 
   div.innerHTML = `
-        <div class="message-meta" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-            <span class="sender">${senderName}</span>
-            <span class="time">${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-        </div>
-        <div class="message-content" style="
+                                              <div class="message-meta" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">
+                                                <span class="sender">${senderName}</span>
+                                                <span class="time">${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                              </div>
+                                              <div class="message-content" style="
             background: ${bg}; 
             color: ${color};
             padding: 0.5rem 0.75rem;
@@ -2649,7 +2804,7 @@ function addChatMessage({ userEmail, message, role, timestamp }) {
             font-size: 0.9rem;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         ">${message}</div>
-    `;
+                                              `;
 
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -2726,15 +2881,15 @@ async function loadComments() {
     const deleteBtn = isOwner ? `<button onclick="window.deleteCommentAction(${c.id})" style="color:red; background:none; border:none; cursor:pointer; font-size:0.8rem;">Delete</button>` : '';
 
     return `
-        <div class="comment-card">
-            <div class="comment-meta">
-                <span class="comment-author">${c.user_email.split('@')[0]}</span>
-                <span class="comment-time">${new Date(c.created_at).toLocaleDateString()}</span>
-                ${deleteBtn}
-            </div>
-            <div class="comment-content">${c.content}</div>
-        </div>
-        `;
+                                              <div class="comment-card">
+                                                <div class="comment-meta">
+                                                  <span class="comment-author">${c.user_email.split('@')[0]}</span>
+                                                  <span class="comment-time">${new Date(c.created_at).toLocaleDateString()}</span>
+                                                  ${deleteBtn}
+                                                </div>
+                                                <div class="comment-content">${c.content}</div>
+                                              </div>
+                                              `;
   }).join('');
 }
 
@@ -2796,13 +2951,13 @@ async function loadSharePermissions() {
     }
 
     return `
-        <div class="collab-user" style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee;">
-            <div class="user-info">
-                <div class="user-email" style="font-size: 0.9rem;">${p.user_email}</div>
-            </div>
-            ${roleBadge}
-        </div>
-        `;
+                                              <div class="collab-user" style="display: flex; align-items: center; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee;">
+                                                <div class="user-info">
+                                                  <div class="user-email" style="font-size: 0.9rem;">${p.user_email}</div>
+                                                </div>
+                                                ${roleBadge}
+                                              </div>
+                                              `;
   }).join('');
 }
 
