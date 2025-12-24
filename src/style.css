@@ -1351,17 +1351,19 @@ body {
 
 .password-toggle {
     position: absolute;
-    right: 1rem;
-    background: none;
+    right: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    padding: 0.25rem;
+    padding: 0.5rem;
     display: flex;
     align-items: center;
+    justify-content: center;
     transition: color 0.2s;
     z-index: 10;
-    outline: none;
 }
 
 .password-toggle:hover {
@@ -1370,6 +1372,21 @@ body {
 
 .password-toggle:focus {
     outline: none;
+}
+
+.password-toggle .eye-icon {
+    display: block;
+    width: 15px;
+    height: 15px;
+    transition: transform 0.2s;
+}
+
+.password-toggle:hover .eye-icon {
+    transform: scale(1.0);
+}
+
+.password-toggle:active .eye-icon {
+    transform: scale(0.7);
 }
 
 /* Form Footer */

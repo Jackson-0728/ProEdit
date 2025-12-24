@@ -36,11 +36,21 @@ export async function signOut() {
     return { error };
 }
 
+// Ensure 'supabase' client is imported and initialized correctly elsewhere in your project.
+// import { supabase } from './supabaseClient'; // Example import
+
 export async function resetPassword(email) {
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
     });
-    return { data, error };
+
+    if (error) {
+        console.error('Password reset email error:', error.message);
+        return { success: false, error };
+    } else {
+        console.log('Password reset email sent successfully.');
+        return { success: true, error: null };
+    }
 }
 
 export async function getUser() {
