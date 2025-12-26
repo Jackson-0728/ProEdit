@@ -1,4 +1,4 @@
-export async function generateContent(prompt, model = 'gemini-2.5-flash') {
+export async function generateContent(prompt, model = 'gemini-3-flash') {
     try {
         const response = await fetch('/api/generate', {
             method: 'POST',
