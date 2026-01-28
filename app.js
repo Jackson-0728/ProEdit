@@ -17,7 +17,6 @@ app.use(express.json());
 const API_KEY = process.env.GEMINI_API_KEY;
 
 // Only check for API key if we are actually trying to use it, or warn but don't crash immediately on import
-// This allows build steps to proceed without env vars if needed
 if (!API_KEY) {
     console.warn('WARNING: GEMINI_API_KEY is not set in .env file');
 }
@@ -32,7 +31,7 @@ app.post('/api/generate', async (req, res) => {
 
         const genAI = new GoogleGenerativeAI(API_KEY);
 
-        const { prompt, model: requestedModel } = req.body;
+        const { prompt, model: requestedModel, task } = req.body;
 
         // Supported models
         const supportedModels = [
@@ -46,16 +45,51 @@ app.post('/api/generate', async (req, res) => {
             ? requestedModel
             : 'gemini-2.5-flash';
 
-        const model = genAI.getGenerativeModel({ model: modelName });
+        const model = genAI.getGenerativeModel({
+            model: modelName,
+            generationConfig: {
+                responseMimeType: task === 'layout_generation' ? 'application/json' : 'text/plain'
+            }
+        });
 
         if (!prompt) {
             return res.status(400).json({ error: 'Prompt is required' });
         }
 
-        const result = await model.generateContent(prompt);
+        let finalPrompt = prompt;
+        if (task === 'layout_generation') {
+            finalPrompt = `
+            You are a document layout generator. Based on the user's idea: "${prompt}", 
+            generate 3 distinct document layouts.
+            Return a JSON object with this structure:
+            {
+              "layouts": [
+                {
+                  "title": "Document Title",
+                  "description": "Brief description of this layout approach",
+                  "content": "<h1>Title</h1><p>...</p>" // HTML content for the document
+                }
+              ]
+            }
+            Ensure the content is valid HTML suitable for a rich text editor.
+            `;
+        }
+
+        const result = await model.generateContent(finalPrompt);
         const response = await result.response;
         const text = response.text();
         const duration = Date.now() - startTime;
+
+        if (task === 'layout_generation') {
+            try {
+                const json = JSON.parse(text);
+                return res.json({ ...json, duration, model: modelName });
+            } catch (e) {
+                console.error("Failed to parse JSON from AI", text);
+                // Fallback if JSON parsing fails
+                return res.json({ layouts: [], error: "Failed to generate valid layouts", text, duration });
+            }
+        }
 
         res.json({ text, duration, model: modelName });
     } catch (error) {
@@ -132,36 +166,22 @@ app.get('/health', (req, res) => {
 });
 
 // Serve static files from the dist directory
-// Vercel handles static files via vercel.json rewrites, so we only need this for local/Node deployment
-// We can detect Vercel environment, or just serve if the directory exists
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// In Vercel, we don't want Express to try to serve static files usually, 
-// but it doesn't hurt to have it as fallback. 
-// However, for clean separation, we can check process.env.VERCEL
-// In Vercel, we don't want Express to try to serve static files usually, 
-// but it doesn't hurt to have it as fallback. 
-// However, for clean separation, we can check process.env.VERCEL
 if (!process.env.VERCEL) {
-    // Check if dist directory exists before trying to serve from it
     const distPath = path.join(__dirname, 'dist');
     const indexHtmlPath = path.join(distPath, 'index.html');
-
-    // Use fs to check existence - we need to import it first or use dynamic import/try-catch
-    // Since we didn't import fs at the top, let's just use try-catch for the static middleware
-    // or assume if this code runs we want to try serving
 
     app.use(express.static(distPath));
 
     // Handle React routing, return all requests to React app
     app.get('*', (req, res) => {
         if (req.path.startsWith('/api')) {
-            // Let API requests fall through to 404 handler if not matched above
             return res.status(404).json({ error: 'API endpoint not found' });
         }
 
-        // Simple existence check using fs (will add import)
+        // Simple existence check using fs
         import('fs').then(fs => {
             if (fs.existsSync(indexHtmlPath)) {
                 res.sendFile(indexHtmlPath);

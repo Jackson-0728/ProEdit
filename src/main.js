@@ -1,5 +1,5 @@
 import './style.css';
-import { generateContent, evaluateModels } from './api/gemini.js';
+import { generateContent, evaluateModels, generateLayouts } from './api/gemini.js';
 import { CollaborationManager } from './api/collaboration.js';
 import {
   supabase, signIn, signUp, signOut, signInWithProvider, resetPassword, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument, getDocumentPermissions, addComment, getComments, updateComment, deleteComment
@@ -336,7 +336,7 @@ function renderLogin() {
 // This file contains the complete renderDashboard function with multi-view support
 
 function renderDashboard() {
-  const userName = user.email ? user.email.split('@')[0] : 'User';
+  const userName = user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'User');
   const userEmail = user.email || 'user@proedit.com';
   let currentView = 'dashboard'; // 'dashboard' or 'documents'
 
@@ -412,11 +412,16 @@ function renderDashboard() {
                 <p>Start writing from scratch.</p>
               </div>
             </div>
-            <div class="quick-start-card" id="templatesCard">
-              <div class="card-image card-gradient-purple"></div>
-              <div class="card-content">
-                <h3>Browse Templates</h3>
-                <p>Choose a pre-made layout.</p>
+            <div class="quick-start-card" id="aiCreateCard" style="cursor: default;">
+              <div class="card-image card-gradient-purple" style="display: flex; align-items: center; justify-content: center;">
+                <i class="iconoir-sparks" style="font-size: 24px; color: white;"></i>
+              </div>
+              <div class="card-content" style="padding: 1rem;">
+                <h3 style="margin-bottom: 0.5rem;">Create with AI</h3>
+                <div class="ai-create-input-wrapper" style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.5rem; background: var(--bg);">
+                  <input type="text" id="aiDocInput" placeholder="Describe your document idea..." style="border: none; outline: none; background: transparent; flex: 1; font-size: 0.85rem; padding: 0.25rem;">
+                  <button id="aiDocBtn" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; color: var(--primary);"><i class="iconoir-arrow-right"></i></button>
+                </div>
               </div>
             </div>
           </div>
@@ -598,15 +603,23 @@ function renderDashboard() {
     }
 
     container.innerHTML = recentDocs.map(doc => `
-      <div class="recent-doc-item" onclick="window.openDoc('${doc.id}')">
-        <div class="doc-info">
-          <i class="iconoir-page"></i>
-          <span class="doc-title">${doc.title || 'Untitled Document'}</span>
+      <div class="recent-doc-item" onclick="window.openDoc('${doc.id}')" style="display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-light); cursor: pointer; transition: background 0.2s;">
+        <div class="doc-main-info" style="display: flex; align-items: center; gap: 1rem; flex: 1;">
+          <div class="doc-icon" style="color: var(--text-muted); display: flex; align-items: center;">
+            <i class="iconoir-page"></i>
+          </div>
+          <div class="doc-details" style="display: flex; flex-direction: column;">
+            <span class="doc-title" style="font-weight: 500; color: var(--text-main); font-size: 0.95rem;">${doc.title || 'Untitled Document'}</span>
+            <span class="doc-meta" style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">
+              ${formatDate(doc.updated_at || doc.updatedAt)} • ${formatSize(doc.content?.length || 0)}
+            </span>
+          </div>
         </div>
-        <span class="doc-time">Last edited: ${formatDate(doc.updated_at || doc.updatedAt)}</span>
-        <button class="icon-btn-more">
-          <i class="iconoir-more-horiz"></i>
-        </button>
+        <div class="doc-actions">
+          <button class="icon-btn-delete" onclick="event.stopPropagation(); window.deleteDoc(event, '${doc.id}')" title="Delete" style="background: none; border: none; padding: 4px; border-radius: 4px; cursor: pointer; color: var(--text-muted);">
+            <i class="iconoir-trash"></i>
+          </button>
+        </div>
       </div>
     `).join('');
   }
@@ -713,6 +726,57 @@ function renderDashboard() {
   }
 
   // Switch views
+  function showLayoutSelection(layouts) {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+      <div class="modal-card" style="max-width: 800px; width: 90%;">
+        <div class="modal-header">
+          <h3>Select a Layout</h3>
+          <button class="close-btn" onclick="this.closest('.modal-overlay').remove()">×</button>
+        </div>
+        <div class="modal-body">
+          <p style="margin-bottom: 1rem; color: var(--text-muted);">Here are some options generated for you:</p>
+          <div class="templates-grid">
+            ${layouts.map((l, i) => `
+              <div class="template-card layout-option" data-index="${i}">
+                <div class="template-icon card-gradient-blue">
+                  <i class="iconoir-sparks"></i>
+                </div>
+                <div class="template-content">
+                  <h3>${l.title || 'Option ' + (i + 1)}</h3>
+                  <p>${l.description || 'AI Generated Layout'}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.querySelectorAll('.layout-option').forEach(card => {
+      card.addEventListener('click', async () => {
+        const index = card.dataset.index;
+        const layout = layouts[index];
+        modal.remove();
+
+        await window.createNewDoc();
+        // The doc is now created and opened (currentDocId is set)
+        if (currentDocId) {
+          const doc = documents.find(d => d.id === currentDocId);
+          if (doc) {
+            doc.content = layout.content;
+            doc.title = layout.title || 'Untitled Document';
+            await updateCurrentDoc({ content: layout.content, title: doc.title });
+            renderEditor(); // Re-render with new content
+          }
+        }
+      });
+    });
+  }
+
   function switchView(view) {
     currentView = view;
     const container = document.getElementById('viewContainer');
@@ -730,7 +794,42 @@ function renderDashboard() {
       // Add event listeners for dashboard
       document.getElementById('newDocCard')?.addEventListener('click', () => window.createNewDoc());
       document.getElementById('createNewBtn')?.addEventListener('click', () => window.createNewDoc());
-      document.getElementById('templatesCard')?.addEventListener('click', () => switchView('templates'));
+      // document.getElementById('templatesCard')?.addEventListener('click', () => switchView('templates'));
+
+      const handleAiCreate = async () => {
+        const input = document.getElementById('aiDocInput');
+        const prompt = input?.value.trim();
+        if (!prompt) return;
+
+        const btn = document.getElementById('aiDocBtn');
+        const originalIcon = btn.innerHTML;
+        btn.innerHTML = '<i class="iconoir-activity icon-spin"></i>';
+        input.disabled = true;
+
+        try {
+          // Use generateLayouts from api/gemini.js
+          const layouts = await generateLayouts(prompt);
+
+          if (layouts && layouts.length > 0) {
+            showLayoutSelection(layouts);
+          } else {
+            // Fallback or error
+            alert('Could not generate layouts. Please try again.');
+          }
+        } catch (e) {
+          console.error(e);
+          alert('Error: ' + e.message);
+        } finally {
+          btn.innerHTML = originalIcon;
+          input.disabled = false;
+          input.focus();
+        }
+      };
+
+      document.getElementById('aiDocBtn')?.addEventListener('click', handleAiCreate);
+      document.getElementById('aiDocInput')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') handleAiCreate();
+      });
 
     } else if (view === 'documents') {
       container.innerHTML = renderDocumentsView();
@@ -803,8 +902,47 @@ function renderDashboard() {
         }
       });
 
-      document.getElementById('saveSettingsBtn')?.addEventListener('click', () => {
-        alert('Settings saved successfully!');
+      document.getElementById('saveSettingsBtn')?.addEventListener('click', async () => {
+        const newName = document.getElementById('settingsName').value;
+        const btn = document.getElementById('saveSettingsBtn');
+        const originalText = btn.innerText;
+
+        btn.innerText = 'Saving...';
+        btn.disabled = true;
+
+        try {
+          const { data, error } = await supabase.auth.updateUser({
+            data: { full_name: newName }
+          });
+
+          if (error) throw error;
+
+          // Update local state
+          user = data.user;
+
+          // Update UI immediately
+          // 1. Sidebar profile
+          const sidebarName = document.querySelector('.user-name');
+          if (sidebarName) sidebarName.innerText = newName;
+
+          // 2. Avatar initital
+          const avatar = document.querySelector('.user-avatar');
+          if (avatar && newName) avatar.innerText = newName.charAt(0).toUpperCase();
+
+          // 3. Welcome title if visible
+          const welcomeTitle = document.querySelector('.view-title');
+          if (welcomeTitle && welcomeTitle.innerText.includes('Welcome back')) {
+            welcomeTitle.innerText = `Welcome back, ${newName}!`;
+          }
+
+          alert('Settings saved successfully!');
+        } catch (error) {
+          console.error('Error updating settings:', error);
+          alert('Failed to save settings: ' + error.message);
+        } finally {
+          btn.innerText = originalText;
+          btn.disabled = false;
+        }
       });
     }
   }
@@ -1033,6 +1171,12 @@ async function renderEditor() {
           </button>
           <button class="tool-btn" data-cmd="insertOrderedList" title="Numbered List">
             <i class="iconoir-numbered-list-left"></i>
+          </button>
+        </div>
+
+        <div class="toolbar-group">
+          <button class="tool-btn" id="pageBreakBtn" title="Insert Page Break">
+            <i class="iconoir-page-search"></i>
           </button>
         </div>
 

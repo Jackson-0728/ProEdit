@@ -41,3 +41,21 @@ export async function evaluateModels(prompt) {
         throw error;
     }
 }
+
+export async function generateLayouts(prompt) {
+    try {
+        const response = await fetch('/api/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt, task: 'layout_generation' })
+        });
+
+        if (!response.ok) throw new Error('Failed to generate layouts');
+
+        const data = await response.json();
+        return data.layouts || [];
+    } catch (error) {
+        console.error('Layout generation failed:', error);
+        return [];
+    }
+}
