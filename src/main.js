@@ -336,6 +336,20 @@ function renderLogin() {
 // This file contains the complete renderDashboard function with multi-view support
 
 function renderDashboard() {
+  // Domain Error Page Check
+  if (window.location.hostname === 'app-proedit.vercel.app' || window.location.search.includes('forceError=true')) {
+    app.innerHTML = `
+         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #111; color: #fff; font-family: system-ui, -apple-system, sans-serif;">
+           <video autoplay loop muted playsinline style="max-width: 250px; width: 100%; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,0.4);">
+             <source src="/assets/Caveman - 404 Page.mp4" type="video/mp4">
+           </video>
+           <h1 style="margin-top: 2rem; font-size: 2.5rem; font-weight: 700; background: linear-gradient(135deg, #fff 0%, #aaa 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Server Maintenance</h1>
+           <p style="margin-top: 1rem; font-size: 1.2rem; color: #888; max-width: 500px; line-height: 1.6;">There's a problem with our server. We will be back in less than a week.</p>
+         </div>
+       `;
+    return;
+  }
+
   const userName = user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'User');
   const userEmail = user.email || 'user@proedit.com';
   let currentView = 'dashboard'; // 'dashboard' or 'documents'
