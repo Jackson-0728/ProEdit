@@ -25,6 +25,395 @@ let commentHighlightResizeHandler = null;
 // DOM Elements
 const app = document.querySelector('#app');
 const RESET_PASSWORD_PATH = '/reset-password';
+const TEMPLATE_ORDER = ['blank', 'meeting', 'proposal', 'report', 'letter', 'resume', 'blog'];
+const TEMPLATE_LIBRARY = {
+  blank: {
+    name: 'Blank Document',
+    desc: 'Start from scratch with a clean page.',
+    icon: 'iconoir-page',
+    gradient: 'blue',
+    docTitle: 'Untitled Document',
+    content: ''
+  },
+  meeting: {
+    name: 'Meeting Notes',
+    desc: 'Structured notes with decisions and action items.',
+    icon: 'iconoir-pin',
+    gradient: 'purple',
+    docTitle: 'Weekly Product Sync',
+    content: `
+      <h1>Weekly Product Sync</h1>
+      <p><strong>Date:</strong> [Month Day, Year] &nbsp;&nbsp; <strong>Time:</strong> [10:00 AM - 10:45 AM] &nbsp;&nbsp; <strong>Facilitator:</strong> [Name]</p>
+      <p><strong>Meeting Goal:</strong> Align on priorities, unblock delivery, and confirm owners for next milestones.</p>
+
+      <h2>Attendees</h2>
+      <ul>
+        <li>[Name, Role]</li>
+        <li>[Name, Role]</li>
+        <li>[Name, Role]</li>
+      </ul>
+
+      <h2>Agenda</h2>
+      <ol>
+        <li>Wins from last week</li>
+        <li>Current sprint status</li>
+        <li>Blockers and dependencies</li>
+        <li>Decisions needed</li>
+      </ol>
+
+      <h2>Discussion Notes</h2>
+      <h3>1. Progress Update</h3>
+      <ul>
+        <li>[What shipped this week]</li>
+        <li>[What moved to next sprint]</li>
+      </ul>
+      <h3>2. Risks / Blockers</h3>
+      <ul>
+        <li>[Risk and impact]</li>
+        <li>[Mitigation owner]</li>
+      </ul>
+
+      <h2>Decisions Made</h2>
+      <ul>
+        <li>[Decision] - <strong>Owner:</strong> [Name] - <strong>Date:</strong> [Date]</li>
+      </ul>
+
+      <h2>Action Items</h2>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Action</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Owner</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Due Date</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Action item]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Name]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Date]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Not Started</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Next Meeting</h2>
+      <p><strong>Date:</strong> [Month Day, Year] &nbsp;&nbsp; <strong>Focus:</strong> [Main objective]</p>
+      <p><em>Tip: replace bracketed placeholders and remove this note before sharing.</em></p>
+    `
+  },
+  proposal: {
+    name: 'Project Proposal',
+    desc: 'Client-ready proposal with scope, timeline, and budget.',
+    icon: 'iconoir-suitcase',
+    gradient: 'pink',
+    docTitle: 'Project Proposal - [Project Name]',
+    content: `
+      <h1>Project Proposal</h1>
+      <p><strong>Project:</strong> [Project Name]</p>
+      <p><strong>Prepared For:</strong> [Client / Team]</p>
+      <p><strong>Prepared By:</strong> [Your Name / Company]</p>
+      <p><strong>Date:</strong> [Month Day, Year]</p>
+
+      <h2>Executive Summary</h2>
+      <p>This proposal outlines a practical approach to deliver <strong>[target outcome]</strong> in <strong>[timeline]</strong>, with clear owners, measurable outcomes, and phased delivery to reduce risk.</p>
+
+      <h2>Problem Statement</h2>
+      <p>[Describe the current challenge, business impact, and why action is needed now.]</p>
+
+      <h2>Objectives</h2>
+      <ul>
+        <li>Increase [metric] by [target percentage] within [timeframe]</li>
+        <li>Reduce [pain point] by implementing [solution area]</li>
+        <li>Establish a repeatable process for [team/workflow]</li>
+      </ul>
+
+      <h2>Scope</h2>
+      <h3>In Scope</h3>
+      <ul>
+        <li>[Deliverable 1]</li>
+        <li>[Deliverable 2]</li>
+        <li>[Deliverable 3]</li>
+      </ul>
+      <h3>Out of Scope</h3>
+      <ul>
+        <li>[Boundary 1]</li>
+        <li>[Boundary 2]</li>
+      </ul>
+
+      <h2>Implementation Plan</h2>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Phase</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Activities</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Duration</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Output</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Discovery</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Stakeholder interviews, requirement mapping</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">1-2 weeks</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Approved requirements brief</td>
+          </tr>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Build</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Implementation and weekly reviews</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">3-5 weeks</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Working solution</td>
+          </tr>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Launch</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">QA, rollout, and handoff</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">1 week</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Go-live and documentation</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Budget Estimate</h2>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Line Item</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Discovery and planning</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">$[Amount]</td>
+          </tr>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Build and testing</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">$[Amount]</td>
+          </tr>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;"><strong>Total</strong></td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;"><strong>$[Total]</strong></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Risks and Mitigations</h2>
+      <ul>
+        <li><strong>Risk:</strong> [Description] - <strong>Mitigation:</strong> [Plan]</li>
+        <li><strong>Risk:</strong> [Description] - <strong>Mitigation:</strong> [Plan]</li>
+      </ul>
+
+      <h2>Approval</h2>
+      <p>If approved, we can begin discovery on <strong>[Start Date]</strong>.</p>
+      <p><strong>Sign-off:</strong> ____________________________</p>
+    `
+  },
+  report: {
+    name: 'Report',
+    desc: 'Insight-focused report with metrics and recommendations.',
+    icon: 'iconoir-graph-up',
+    gradient: 'orange',
+    docTitle: 'Performance Report - [Period]',
+    content: `
+      <h1>Performance Report</h1>
+      <p><strong>Period:</strong> [Q1 2026]</p>
+      <p><strong>Prepared By:</strong> [Name]</p>
+      <p><strong>Date:</strong> [Month Day, Year]</p>
+
+      <h2>Executive Summary</h2>
+      <p>During this period, the team delivered strong progress against goals for <strong>[initiative]</strong>, with notable gains in <strong>[metric A]</strong> and <strong>[metric B]</strong>. The primary gap remains <strong>[area]</strong>, which is addressed in the recommendations section.</p>
+
+      <h2>Key Metrics</h2>
+      <table style="width: 100%; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Metric</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Current</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Target</th>
+            <th style="text-align: left; border: 1px solid #d1d5db; padding: 8px;">Trend</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Metric A]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Value]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Value]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Up / Flat / Down</td>
+          </tr>
+          <tr>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Metric B]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Value]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">[Value]</td>
+            <td style="border: 1px solid #d1d5db; padding: 8px;">Up / Flat / Down</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>Highlights</h2>
+      <ul>
+        <li>[Major win and why it mattered]</li>
+        <li>[Operational improvement that increased efficiency]</li>
+        <li>[Customer or stakeholder impact delivered]</li>
+      </ul>
+
+      <h2>Detailed Findings</h2>
+      <h3>What Worked</h3>
+      <p>[Summarize initiatives that performed well with supporting evidence.]</p>
+      <h3>What Did Not Work</h3>
+      <p>[Summarize underperforming areas and root causes.]</p>
+      <h3>Notable Dependencies</h3>
+      <p>[Cross-team or external factors that affected outcomes.]</p>
+
+      <h2>Recommendations</h2>
+      <ol>
+        <li>[Recommendation 1] - Expected impact: [description]</li>
+        <li>[Recommendation 2] - Expected impact: [description]</li>
+        <li>[Recommendation 3] - Expected impact: [description]</li>
+      </ol>
+
+      <h2>Next Steps</h2>
+      <ul>
+        <li>[Action and owner]</li>
+        <li>[Action and owner]</li>
+      </ul>
+    `
+  },
+  letter: {
+    name: 'Letter',
+    desc: 'Professional letter format for business communication.',
+    icon: 'iconoir-mail',
+    gradient: 'green',
+    docTitle: 'Formal Letter - [Subject]',
+    content: `
+      <p>[Your Name]</p>
+      <p>[Your Title]</p>
+      <p>[Company Name]</p>
+      <p>[Street Address]</p>
+      <p>[City, State ZIP]</p>
+      <p>[Email] | [Phone]</p>
+      <p>[Month Day, Year]</p>
+
+      <p>[Recipient Name]</p>
+      <p>[Recipient Title]</p>
+      <p>[Recipient Company]</p>
+      <p>[Recipient Address]</p>
+      <p>[City, State ZIP]</p>
+
+      <p><strong>Subject:</strong> [Clear Subject Line]</p>
+
+      <p>Dear [Recipient Name],</p>
+
+      <p>I am writing to [purpose of letter] regarding [topic/context].</p>
+
+      <p>[Second paragraph with supporting details, timeline, or request.]</p>
+
+      <p>[Third paragraph with next steps, desired outcome, or closing context.]</p>
+
+      <p>Thank you for your time and consideration. Please let me know if you would like to discuss this further.</p>
+
+      <p>Sincerely,</p>
+
+      <p>[Your Name]</p>
+      <p>[Optional Signature Block]</p>
+    `
+  },
+  resume: {
+    name: 'Resume',
+    desc: 'Modern resume layout with impact-focused sections.',
+    icon: 'iconoir-user',
+    gradient: 'teal',
+    docTitle: 'Resume - [Your Name]',
+    content: `
+      <h1>[Your Name]</h1>
+      <p><strong>[Target Role]</strong></p>
+      <p>[City, State] | [Email] | [Phone] | [Portfolio / LinkedIn]</p>
+
+      <h2>Professional Summary</h2>
+      <p>Results-driven [role] with [X] years of experience in [domain]. Proven ability to [impact statement], lead cross-functional initiatives, and deliver measurable outcomes in fast-paced environments.</p>
+
+      <h2>Core Skills</h2>
+      <p><strong>Technical:</strong> [Skill], [Skill], [Skill], [Skill]</p>
+      <p><strong>Business:</strong> Strategy, Stakeholder Management, Project Delivery, Communication</p>
+
+      <h2>Experience</h2>
+      <h3>[Most Recent Job Title] - [Company]</h3>
+      <p><em>[Month Year] - Present | [Location]</em></p>
+      <ul>
+        <li>Led [initiative], increasing [metric] by <strong>[X]%</strong> in [timeframe].</li>
+        <li>Built and launched [project], reducing [problem] by <strong>[X]%</strong>.</li>
+        <li>Partnered with [teams] to deliver [outcome], improving [business impact].</li>
+      </ul>
+
+      <h3>[Previous Job Title] - [Company]</h3>
+      <p><em>[Month Year] - [Month Year] | [Location]</em></p>
+      <ul>
+        <li>Managed [responsibility], delivering [result].</li>
+        <li>Optimized [process], saving [time/cost] by [amount].</li>
+      </ul>
+
+      <h2>Projects</h2>
+      <h3>[Project Name]</h3>
+      <p>[One-line summary of project goal and what you built.]</p>
+      <ul>
+        <li><strong>Stack:</strong> [Tech stack]</li>
+        <li><strong>Result:</strong> [Outcome or metric]</li>
+      </ul>
+
+      <h2>Education</h2>
+      <p><strong>[Degree]</strong> - [School], [Year]</p>
+      <p>[Relevant coursework, honors, or leadership if applicable]</p>
+
+      <h2>Certifications</h2>
+      <ul>
+        <li>[Certification Name] - [Issuer], [Year]</li>
+      </ul>
+    `
+  },
+  blog: {
+    name: 'Blog Post',
+    desc: 'Editorial blog template with strong flow and CTA.',
+    icon: 'iconoir-pen-tablet',
+    gradient: 'indigo',
+    docTitle: 'Blog Post - [Topic]',
+    content: `
+      <h1>[Compelling Blog Title]</h1>
+      <p><em>[A sharp one-line subtitle that promises value.]</em></p>
+      <p><strong>By:</strong> [Author Name] &nbsp;&nbsp; <strong>Published:</strong> [Month Day, Year] &nbsp;&nbsp; <strong>Read Time:</strong> [X min]</p>
+
+      <h2>Introduction</h2>
+      <p>Start with a relatable problem or surprising fact that hooks the reader. Explain why this topic matters now and what the reader will gain by finishing the article.</p>
+
+      <h2>Key Insight #1</h2>
+      <p>[Explain the first core idea clearly and practically. Add a concrete example.]</p>
+      <ul>
+        <li>[Specific takeaway]</li>
+        <li>[Specific takeaway]</li>
+      </ul>
+
+      <h2>Key Insight #2</h2>
+      <p>[Introduce a second angle, framework, or case study.]</p>
+      <blockquote>[Optional quote, customer insight, or key statement.]</blockquote>
+
+      <h2>How to Apply This</h2>
+      <ol>
+        <li>[Step 1 the reader can implement today]</li>
+        <li>[Step 2 with expected result]</li>
+        <li>[Step 3 with a practical checkpoint]</li>
+      </ol>
+
+      <h2>Common Mistakes to Avoid</h2>
+      <ul>
+        <li>[Mistake] - Better approach: [Fix]</li>
+        <li>[Mistake] - Better approach: [Fix]</li>
+      </ul>
+
+      <h2>Conclusion</h2>
+      <p>Summarize the main point in plain language and reinforce the next best action for the reader.</p>
+      <p><strong>Call to Action:</strong> [Invite readers to comment, subscribe, or try the framework.]</p>
+    `
+  }
+};
 
 // --- INITIALIZATION ---
 
@@ -812,15 +1201,7 @@ function renderDashboard() {
   }
 
   function renderTemplatesView() {
-    const templates = [
-      { id: 'blank', name: 'Blank Document', desc: 'Start from scratch', icon: 'iconoir-page', gradient: 'blue' },
-      { id: 'meeting', name: 'Meeting Notes', desc: 'Template for meeting notes', icon: 'iconoir-pin-alt', gradient: 'purple' },
-      { id: 'proposal', name: 'Project Proposal', desc: 'Business proposal template', icon: 'iconoir-suitcase', gradient: 'pink' },
-      { id: 'report', name: 'Report', desc: 'Professional report layout', icon: 'iconoir-graph-up', gradient: 'orange' },
-      { id: 'letter', name: 'Letter', desc: 'Formal letter template', icon: 'iconoir-mail', gradient: 'green' },
-      { id: 'resume', name: 'Resume', desc: 'Professional resume', icon: 'iconoir-user', gradient: 'teal' },
-      { id: 'blog', name: 'Blog Post', desc: 'Blog post structure', icon: 'iconoir-pen-tablet', gradient: 'indigo' }
-    ];
+    const templates = TEMPLATE_ORDER.map((id) => ({ id, ...TEMPLATE_LIBRARY[id] }));
 
     return `
       <div class="templates-view">
@@ -1158,24 +1539,18 @@ function renderDashboard() {
 
   // Create document from template
   async function createFromTemplate(templateId) {
-    const templates = {
-      blank: '',
-      meeting: '<h1>Meeting Notes</h1><p><strong>Date:</strong> [Insert date]</p><p><strong>Attendees:</strong></p><ul><li>[Name 1]</li><li>[Name 2]</li></ul><h2>Agenda</h2><ul><li>[Topic 1]</li><li>[Topic 2]</li></ul><h2>Notes</h2><p>[Your notes here]</p><h2>Action Items</h2><ul><li>[Action item 1]</li></ul>',
-      proposal: '<h1>Project Proposal</h1><h2>Executive Summary</h2><p>[Brief overview]</p><h2>Problem Statement</h2><p>[Define the problem]</p><h2>Proposed Solution</h2><p>[Your solution]</p><h2>Timeline</h2><p>[Project timeline]</p><h2>Budget</h2><p>[Cost breakdown]</p>',
-      report: '<h1>Report Title</h1><p><strong>Author:</strong> [Your name]</p><p><strong>Date:</strong> [Date]</p><h2>Introduction</h2><p>[Introduction text]</p><h2>Findings</h2><p>[Your findings]</p><h2>Conclusion</h2><p>[Conclusion]</p>',
-      letter: '<p>[Your Name]</p><p>[Your Address]</p><p>[Date]</p><br><p>[Recipient Name]</p><p>[Recipient Address]</p><br><p>Dear [Recipient],</p><p>[Letter content]</p><br><p>Sincerely,</p><p>[Your Name]</p>',
-      resume: '<h1>[Your Name]</h1><p>[Email] | [Phone] | [Location]</p><h2>Professional Summary</h2><p>[Brief summary]</p><h2>Experience</h2><p><strong>[Job Title]</strong> - [Company]</p><p>[Dates]</p><ul><li>[Achievement 1]</li></ul><h2>Education</h2><p><strong>[Degree]</strong> - [School]</p><p>[Year]</p><h2>Skills</h2><ul><li>[Skill 1]</li><li>[Skill 2]</li></ul>',
-      blog: '<h1>[Blog Post Title]</h1><p><em>[Subtitle or excerpt]</em></p><p>[Introduction paragraph]</p><h2>Section 1</h2><p>[Content]</p><h2>Section 2</h2><p>[Content]</p><h2>Conclusion</h2><p>[Wrap up]</p>'
-    };
+    const template = TEMPLATE_LIBRARY[templateId] || TEMPLATE_LIBRARY.blank;
+    const content = template.content ? template.content.trim() : '';
+    const title = template.docTitle || 'Untitled Document';
 
-    const content = templates[templateId] || '';
     await window.createNewDoc();
-    // After creating, set the content
     if (currentDocId) {
       const doc = documents.find(d => d.id === currentDocId);
       if (doc) {
         doc.content = content;
-        doc.title = templateId.charAt(0).toUpperCase() + templateId.slice(1);
+        doc.title = title;
+        await updateCurrentDoc({ content, title });
+        renderEditor();
       }
     }
   }
