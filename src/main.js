@@ -15,6 +15,12 @@ let collaborationManager = null;
 let collabUsers = [];
 let documentChatUnsubscribe = null;
 let pendingCommentSelection = null;
+let cachedComments = [];
+let commentAnchors = [];
+let activeCommentId = null;
+let commentHighlightRaf = null;
+let commentHighlightObserver = null;
+let commentHighlightResizeHandler = null;
 
 // DOM Elements
 const app = document.querySelector('#app');
@@ -1042,6 +1048,7 @@ async function renderEditor() {
           editor.innerHTML = payload.content;
           // Very basic cursor preservation attempt (often fails on big diffs)
           if (range) selection.addRange(range);
+          scheduleCommentHighlightsRender();
         }
       }
     });
@@ -2617,6 +2624,7 @@ function setupEditorListeners() {
 
   editor.addEventListener('input', (e) => {
     updateCurrentDoc({ content: editor.innerHTML });
+    scheduleCommentHighlightsRender();
 
     // Broadcast changes
     if (collaborationManager) {
@@ -3123,16 +3131,17 @@ function setupEditorListeners() {
       case 'comment': {
         const commentsSidebar = document.getElementById('commentsSidebar');
         const newCommentInput = document.getElementById('newCommentInput');
-        const excerpt = selectedText.length > 220 ? `${selectedText.slice(0, 220)}...` : selectedText;
+        const selectionOffsets = getRangeOffsetsWithinEditor(editor, selectedTextRange);
         pendingCommentSelection = {
           quote: selectedText,
+          start: selectionOffsets?.start ?? null,
+          end: selectionOffsets?.end ?? null,
           created_at: new Date().toISOString()
         };
 
         if (commentsSidebar) commentsSidebar.style.display = 'flex';
         if (sidebarCommentBtn) sidebarCommentBtn.classList.add('active');
         if (newCommentInput) {
-          newCommentInput.value = `Re: "${excerpt}"\n`;
           newCommentInput.focus();
         }
         loadComments();
@@ -4110,6 +4119,387 @@ window.deleteChatMessageAction = async (id) => {
 
 // --- COMMENTS LOGIC ---
 
+function escapeHtmlValue(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function getRangeOffsetsWithinEditor(editor, range) {
+  if (!editor || !range) return null;
+
+  let start = null;
+  let end = null;
+  let cursor = 0;
+
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const length = node.nodeValue?.length || 0;
+
+    if (node === range.startContainer) {
+      start = cursor + Math.min(range.startOffset, length);
+    }
+
+    if (node === range.endContainer) {
+      end = cursor + Math.min(range.endOffset, length);
+    }
+
+    cursor += length;
+  }
+
+  if (start == null || end == null) {
+    const beforeStart = range.cloneRange();
+    beforeStart.selectNodeContents(editor);
+    beforeStart.setEnd(range.startContainer, range.startOffset);
+
+    const beforeEnd = range.cloneRange();
+    beforeEnd.selectNodeContents(editor);
+    beforeEnd.setEnd(range.endContainer, range.endOffset);
+
+    start = beforeStart.toString().length;
+    end = beforeEnd.toString().length;
+  }
+
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  return { start, end };
+}
+
+function openCommentsSidebar() {
+  const commentsSidebar = document.getElementById('commentsSidebar');
+  const sidebarCommentBtn = document.getElementById('sidebarCommentBtn');
+  if (commentsSidebar) commentsSidebar.style.display = 'flex';
+  if (sidebarCommentBtn) sidebarCommentBtn.classList.add('active');
+}
+
+function focusCommentCard(commentId) {
+  const commentsList = document.getElementById('commentsList');
+  if (!commentsList) return false;
+
+  const card = commentsList.querySelector(`.comment-card[data-comment-id="${commentId}"]`);
+  if (!card) return false;
+
+  commentsList.querySelectorAll('.comment-card-focus').forEach((node) => {
+    node.classList.remove('comment-card-focus');
+  });
+
+  card.classList.add('comment-card-focus');
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => {
+    card.classList.remove('comment-card-focus');
+  }, 1500);
+
+  return true;
+}
+
+function getCommentHighlightLayer() {
+  const editorArea = document.querySelector('.editor-area');
+  if (!editorArea) return null;
+
+  let layer = editorArea.querySelector('#commentHighlightLayer');
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.id = 'commentHighlightLayer';
+    layer.className = 'comment-highlight-layer';
+    editorArea.appendChild(layer);
+
+    layer.addEventListener('click', (event) => {
+      const rect = event.target.closest('.comment-highlight-rect');
+      if (!rect) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      const commentId = Number(rect.dataset.commentId);
+      if (!Number.isFinite(commentId)) return;
+
+      activeCommentId = commentId;
+      openCommentsSidebar();
+      scheduleCommentHighlightsRender();
+
+      if (!focusCommentCard(commentId)) {
+        loadComments({ focusCommentId: commentId });
+      }
+    });
+  }
+
+  return layer;
+}
+
+function buildEditorTextIndex(editor) {
+  const textNodes = [];
+  let fullText = '';
+  let cursor = 0;
+
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const text = node.nodeValue || '';
+    if (!text.length) continue;
+
+    const start = cursor;
+    cursor += text.length;
+    textNodes.push({ node, start, end: cursor });
+    fullText += text;
+  }
+
+  return { textNodes, fullText };
+}
+
+function resolveOffsetToNode(textNodes, offset, preferNext = false) {
+  if (!textNodes.length) return null;
+
+  for (let index = 0; index < textNodes.length; index += 1) {
+    const item = textNodes[index];
+    if (offset < item.end || (!preferNext && offset === item.end)) {
+      const localOffset = Math.max(0, Math.min(offset - item.start, item.node.nodeValue.length));
+      return { node: item.node, offset: localOffset };
+    }
+
+    if (offset === item.end && preferNext) {
+      const next = textNodes[index + 1];
+      if (next) return { node: next.node, offset: 0 };
+    }
+  }
+
+  const last = textNodes[textNodes.length - 1];
+  return { node: last.node, offset: last.node.nodeValue.length };
+}
+
+function createRangeFromOffsets(textNodes, start, end) {
+  if (!textNodes.length) return null;
+
+  const maxOffset = textNodes[textNodes.length - 1].end;
+  const safeStart = Math.max(0, Math.min(start, maxOffset));
+  const safeEnd = Math.max(0, Math.min(end, maxOffset));
+  if (safeEnd <= safeStart) return null;
+
+  const startPoint = resolveOffsetToNode(textNodes, safeStart, false);
+  const endPoint = resolveOffsetToNode(textNodes, safeEnd, false);
+  if (!startPoint || !endPoint) return null;
+
+  const range = document.createRange();
+  range.setStart(startPoint.node, startPoint.offset);
+  range.setEnd(endPoint.node, endPoint.offset);
+  if (range.collapsed) return null;
+  return range;
+}
+
+function rangesOverlap(start, end, range) {
+  return start < range.end && end > range.start;
+}
+
+function findQuoteOffsets(fullText, quote, reservedRanges, preferredStart = null) {
+  if (!quote) return null;
+
+  const target = String(quote);
+  let matchIndex = fullText.indexOf(target);
+  if (matchIndex === -1) return null;
+
+  const candidates = [];
+  while (matchIndex !== -1) {
+    const candidate = { start: matchIndex, end: matchIndex + target.length };
+    const overlap = reservedRanges.some((range) => rangesOverlap(candidate.start, candidate.end, range));
+    const distance = Number.isFinite(preferredStart) ? Math.abs(candidate.start - preferredStart) : 0;
+    candidates.push({ ...candidate, overlap, distance });
+    matchIndex = fullText.indexOf(target, matchIndex + 1);
+  }
+
+  const nonOverlapping = candidates.filter((candidate) => !candidate.overlap);
+  const pool = nonOverlapping.length > 0 ? nonOverlapping : candidates;
+  pool.sort((a, b) => a.distance - b.distance || a.start - b.start);
+  const best = pool[0];
+  return best ? { start: best.start, end: best.end } : null;
+}
+
+function buildCommentAnchors(editor, comments) {
+  const { textNodes, fullText } = buildEditorTextIndex(editor);
+  if (!textNodes.length || !Array.isArray(comments) || comments.length === 0) return [];
+
+  const anchors = [];
+  const reservedRanges = [];
+
+  comments.forEach((comment) => {
+    const selection = comment?.selection_range || {};
+    const quote = typeof selection.quote === 'string' ? selection.quote : '';
+    const maybeStart = Number(selection.start ?? selection.start_offset);
+    const maybeEnd = Number(selection.end ?? selection.end_offset);
+
+    let start = Number.isFinite(maybeStart) ? maybeStart : null;
+    let end = Number.isFinite(maybeEnd) ? maybeEnd : null;
+    let range = null;
+
+    if (start != null && end != null && end > start) {
+      range = createRangeFromOffsets(textNodes, start, end);
+    }
+
+    if ((!range || !range.toString().trim()) && quote) {
+      const offsets = findQuoteOffsets(fullText, quote, reservedRanges, start);
+      if (offsets) {
+        start = offsets.start;
+        end = offsets.end;
+        range = createRangeFromOffsets(textNodes, start, end);
+      }
+    }
+
+    if (!range || !range.toString().trim()) return;
+
+    reservedRanges.push({ start, end });
+    anchors.push({
+      commentId: Number(comment.id),
+      range,
+      start,
+      end
+    });
+  });
+
+  return anchors;
+}
+
+function renderCommentHighlights(comments = cachedComments) {
+  const editor = document.getElementById('editor');
+  const editorArea = document.querySelector('.editor-area');
+  const layer = getCommentHighlightLayer();
+
+  if (!editor || !editorArea || !layer) return;
+
+  layer.innerHTML = '';
+  commentAnchors = [];
+
+  if (!Array.isArray(comments) || comments.length === 0) {
+    layer.style.display = 'none';
+    return;
+  }
+
+  const anchors = buildCommentAnchors(editor, comments);
+  commentAnchors = anchors;
+
+  if (!anchors.length) {
+    layer.style.display = 'none';
+    return;
+  }
+
+  const areaRect = editorArea.getBoundingClientRect();
+  const scrollLeft = editorArea.scrollLeft;
+  const scrollTop = editorArea.scrollTop;
+
+  layer.style.display = 'block';
+  layer.style.width = `${Math.max(editorArea.clientWidth, editorArea.scrollWidth)}px`;
+  layer.style.height = `${Math.max(editorArea.clientHeight, editorArea.scrollHeight)}px`;
+
+  anchors.forEach((anchor) => {
+    const rects = Array.from(anchor.range.getClientRects());
+    rects.forEach((rect) => {
+      if (rect.width <= 0 || rect.height <= 0) return;
+
+      const highlightRect = document.createElement('button');
+      highlightRect.type = 'button';
+      highlightRect.className = `comment-highlight-rect${activeCommentId === anchor.commentId ? ' active' : ''}`;
+      highlightRect.dataset.commentId = String(anchor.commentId);
+      highlightRect.style.left = `${rect.left - areaRect.left + scrollLeft}px`;
+      highlightRect.style.top = `${rect.top - areaRect.top + scrollTop}px`;
+      highlightRect.style.width = `${rect.width}px`;
+      highlightRect.style.height = `${rect.height}px`;
+
+      layer.appendChild(highlightRect);
+    });
+  });
+}
+
+function scheduleCommentHighlightsRender() {
+  if (commentHighlightRaf != null) cancelAnimationFrame(commentHighlightRaf);
+  commentHighlightRaf = requestAnimationFrame(() => {
+    commentHighlightRaf = null;
+    renderCommentHighlights(cachedComments);
+  });
+}
+
+window.aiFixCommentAction = async (id) => {
+  const commentId = Number(id);
+  if (!Number.isFinite(commentId)) return;
+
+  const triggerBtn = document.querySelector(`.comment-ai-fix-btn[data-comment-id="${commentId}"]`);
+  const originalLabel = triggerBtn?.textContent || 'AI Fix';
+  if (triggerBtn) {
+    triggerBtn.disabled = true;
+    triggerBtn.textContent = 'Fixing...';
+  }
+
+  try {
+    const comment = cachedComments.find((entry) => Number(entry.id) === commentId);
+    if (!comment) {
+      alert('Could not find this comment');
+      return;
+    }
+
+    if (!commentAnchors.length) renderCommentHighlights(cachedComments);
+    const anchor = commentAnchors.find((entry) => entry.commentId === commentId);
+    if (!anchor?.range) {
+      alert('Could not locate the highlighted text for this comment');
+      return;
+    }
+
+    const textToFix = anchor.range.toString().trim();
+    if (!textToFix) {
+      alert('The highlighted text is empty');
+      return;
+    }
+
+    const commentInstruction = String(comment.content || '').trim();
+    if (!commentInstruction) {
+      alert('This comment does not include instructions for AI fix');
+      return;
+    }
+
+    const prompt = `You are editing a document snippet based on a reviewer comment.
+Reviewer comment:
+"${commentInstruction}"
+
+Text to revise:
+"""${textToFix}"""
+
+Rules:
+- Return ONLY the revised text.
+- Keep the same language and intent.
+- Do not add explanations, prefixes, or quotation marks.`;
+
+    const selectedModel = document.getElementById('aiModelSelector')?.value
+      || localStorage.getItem('proedit_ai_model')
+      || 'gemini-2.5-flash';
+    const response = await generateContent(prompt, selectedModel);
+    let revisedText = String(response || '').trim();
+    revisedText = revisedText.replace(/^```(?:text)?/i, '').replace(/```$/i, '').trim();
+
+    if (!revisedText) {
+      alert('AI returned empty text');
+      return;
+    }
+
+    const editor = document.getElementById('editor');
+    if (!editor) return;
+
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(anchor.range.cloneRange());
+    document.execCommand('insertText', false, revisedText);
+
+    updateCurrentDoc({ content: editor.innerHTML });
+    if (collaborationManager) collaborationManager.sendTextUpdate(editor.innerHTML);
+
+    activeCommentId = commentId;
+    alert('AI fix applied');
+    await loadComments({ focusCommentId: commentId });
+  } catch (error) {
+    console.error('Failed to apply AI fix:', error);
+    alert('Failed to apply AI fix');
+  } finally {
+    if (triggerBtn) {
+      triggerBtn.disabled = false;
+      triggerBtn.textContent = originalLabel;
+    }
+  }
+};
+
 async function setupComments() {
   const commentsSidebar = document.getElementById('commentsSidebar');
   const commentsToggleBtn = document.getElementById('commentsToggleBtn');
@@ -4154,9 +4544,32 @@ async function setupComments() {
       }
     });
   }
+
+  if (commentHighlightObserver) {
+    commentHighlightObserver.disconnect();
+    commentHighlightObserver = null;
+  }
+  if (editor) {
+    commentHighlightObserver = new MutationObserver(() => {
+      scheduleCommentHighlightsRender();
+    });
+    commentHighlightObserver.observe(editor, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  }
+
+  if (commentHighlightResizeHandler) {
+    window.removeEventListener('resize', commentHighlightResizeHandler);
+  }
+  commentHighlightResizeHandler = () => scheduleCommentHighlightsRender();
+  window.addEventListener('resize', commentHighlightResizeHandler);
+
+  await loadComments();
 }
 
-async function loadComments() {
+async function loadComments({ focusCommentId = null } = {}) {
   const commentsList = document.getElementById('commentsList');
   if (!commentsList) return;
 
@@ -4166,56 +4579,96 @@ async function loadComments() {
 
   if (error) {
     commentsList.innerHTML = '<div class="panel-empty">Failed to load comments</div>';
+    cachedComments = [];
+    scheduleCommentHighlightsRender();
     return;
   }
 
-  if (!comments || comments.length === 0) {
+  cachedComments = Array.isArray(comments) ? comments : [];
+  if (activeCommentId != null && !cachedComments.some((entry) => Number(entry.id) === Number(activeCommentId))) {
+    activeCommentId = null;
+  }
+  if (focusCommentId != null) {
+    activeCommentId = Number(focusCommentId);
+  }
+
+  scheduleCommentHighlightsRender();
+
+  if (cachedComments.length === 0) {
     commentsList.innerHTML = '<div class="panel-empty">No comments yet</div>';
     return;
   }
 
   const { data: { user: currentUser } } = await supabase.auth.getUser();
 
-  commentsList.innerHTML = comments.map(c => {
+  commentsList.innerHTML = cachedComments.map((c) => {
     const isOwner = currentUser && c.user_id === currentUser.id;
-    const safeAuthor = String(c.user_email?.split('@')[0] || 'unknown')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-    const safeContent = String(c.content || '')
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
+    const safeAuthor = escapeHtmlValue(c.user_email?.split('@')[0] || 'unknown');
+    const safeContent = escapeHtmlValue(c.content || '')
       .replace(/\n/g, '<br>');
     const selectionQuote = c.selection_range?.quote;
     const safeQuote = selectionQuote
-      ? String(selectionQuote)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
+      ? escapeHtmlValue(selectionQuote)
+        .replace(/\n/g, '<br>')
         .replace(/"/g, '&quot;')
       : '';
+    const selection = c.selection_range || {};
+    const hasAnchor = (typeof selection.quote === 'string' && selection.quote.trim().length > 0)
+      || (
+        Number.isFinite(Number(selection.start ?? selection.start_offset))
+        && Number.isFinite(Number(selection.end ?? selection.end_offset))
+      );
     const deleteBtn = isOwner ? `<button class="comment-delete-btn" onclick="window.deleteCommentAction(${c.id})">Delete</button>` : '';
+    const aiFixBtn = `
+      <button
+        class="comment-ai-fix-btn"
+        data-comment-id="${c.id}"
+        onclick="window.aiFixCommentAction(${c.id})"
+        ${hasAnchor ? '' : 'disabled title="This comment has no linked text range"'}
+      >
+        AI Fix
+      </button>
+    `;
 
     return `
-      <div class="comment-card">
+      <div class="comment-card" data-comment-id="${c.id}">
         <div class="comment-meta">
           <span class="comment-author">${safeAuthor}</span>
           <span class="comment-time">${new Date(c.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-          ${deleteBtn}
+          <div class="comment-meta-actions">
+            ${aiFixBtn}
+            ${deleteBtn}
+          </div>
         </div>
         ${selectionQuote ? `<div class="comment-quote">"${safeQuote}"</div>` : ''}
         <div class="comment-content">${safeContent}</div>
       </div>
     `;
   }).join('');
+
+  commentsList.querySelectorAll('.comment-card').forEach((card) => {
+    card.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      const commentId = Number(card.dataset.commentId);
+      if (!Number.isFinite(commentId)) return;
+      activeCommentId = commentId;
+      scheduleCommentHighlightsRender();
+    });
+  });
+
+  if (focusCommentId != null) {
+    focusCommentCard(Number(focusCommentId));
+  }
 }
 
 window.deleteCommentAction = async (id) => {
   if (!confirm('Delete this comment?')) return;
   const { error } = await deleteComment(id);
   if (error) alert('Failed to delete comment');
-  else loadComments();
+  else {
+    if (Number(activeCommentId) === Number(id)) activeCommentId = null;
+    loadComments();
+  }
 };
 
 // --- SHARE LOGIC ---
