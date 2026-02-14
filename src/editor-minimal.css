@@ -1371,3 +1371,167 @@
 .custom-alert-text {
     line-height: 1.35;
 }
+
+/* Unified comments/chat panel language */
+.panel-empty {
+    text-align: center;
+    color: #64748B;
+    padding: 1rem;
+    font-size: 0.9rem;
+}
+
+.comments-sidebar-modern .comments-list,
+.chat-widget-modern .chat-messages {
+    padding: 0.9rem;
+    background: radial-gradient(circle at top, #F1F5F9, #F8FAFC 45%, #FFFFFF);
+}
+
+.comment-card {
+    border: 1px solid #E2E8F0;
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 0.72rem 0.78rem;
+    margin-bottom: 0.62rem;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.comment-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.35rem;
+}
+
+.comment-author {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #0F172A;
+}
+
+.comment-time {
+    font-size: 0.74rem;
+    color: #64748B;
+    margin-left: auto;
+}
+
+.comment-delete-btn {
+    border: 1px solid #FECACA;
+    background: #FEF2F2;
+    color: #B91C1C;
+    border-radius: 8px;
+    height: 24px;
+    padding: 0 0.5rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.comment-delete-btn:hover {
+    background: #FEE2E2;
+}
+
+.comment-quote {
+    margin: 0.2rem 0 0.45rem;
+    border-left: 3px solid #C4B5FD;
+    background: #F5F3FF;
+    color: #5B21B6;
+    padding: 0.45rem 0.58rem;
+    border-radius: 8px;
+    font-size: 0.79rem;
+    line-height: 1.38;
+}
+
+.comment-content {
+    color: #1E293B;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.chat-message-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.26rem;
+    margin-bottom: 0.62rem;
+}
+
+.chat-message-row.me {
+    align-items: flex-end;
+}
+
+.chat-message-row.other {
+    align-items: flex-start;
+}
+
+.chat-message-meta {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.38rem;
+    font-size: 0.74rem;
+    color: #64748B;
+    padding: 0 0.15rem;
+}
+
+.chat-sender {
+    font-weight: 700;
+    color: #334155;
+}
+
+.chat-delete-btn {
+    border: 1px solid #FECACA;
+    background: #FEF2F2;
+    color: #B91C1C;
+    border-radius: 8px;
+    height: 22px;
+    padding: 0 0.45rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.chat-delete-btn:hover {
+    background: #FEE2E2;
+}
+
+.chat-message-row.me .chat-delete-btn {
+    border-color: rgba(255, 255, 255, 0.65);
+    background: rgba(255, 255, 255, 0.18);
+    color: #FFFFFF;
+}
+
+.chat-message-row.me .chat-delete-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.chat-bubble {
+    max-width: 86%;
+    border-radius: 12px;
+    border: 1px solid #E2E8F0;
+    background: #FFFFFF;
+    color: #0F172A;
+    padding: 0.52rem 0.72rem;
+    font-size: 0.9rem;
+    line-height: 1.45;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+}
+
+.chat-message-row.me .chat-bubble {
+    border-color: #93C5FD;
+    background: linear-gradient(135deg, #2563EB, #1D4ED8);
+    color: #FFFFFF;
+}
+
+.chat-message-row.ai .chat-bubble {
+    border-color: #DDD6FE;
+    background: linear-gradient(135deg, #7C3AED, #6366F1);
+    color: #FFFFFF;
+}
+
+.chat-message-row.ai .chat-sender {
+    color: #6D28D9;
+}
+
+.text-edit-popup .edit-popup-btn[data-action="comment"] {
+    background: #EFF6FF;
+    color: #1D4ED8;
+    border-color: #BFDBFE;
+}

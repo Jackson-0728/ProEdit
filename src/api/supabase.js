@@ -252,3 +252,98 @@ export async function deleteComment(commentId) {
         .eq('id', commentId);
     return { error };
 }
+
+// --- DOCUMENT CHAT (PERSISTED + REALTIME) ---
+
+export async function getDocumentChatMessages(docId, limit = 300) {
+    const { data, error } = await supabase
+        .from('document_chat_messages')
+        .select('*')
+        .eq('document_id', docId)
+        .order('created_at', { ascending: true })
+        .limit(limit);
+    return { data, error };
+}
+
+export async function createDocumentChatMessage(docId, message, role = 'user') {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { data: null, error: 'Not authenticated' };
+
+    const payload = {
+        document_id: docId,
+        user_id: session.user.id,
+        user_email: session.user.email,
+        role,
+        message
+    };
+
+    const { data, error } = await supabase
+        .from('document_chat_messages')
+        .insert([payload])
+        .select()
+        .single();
+
+    return { data, error };
+}
+
+export async function deleteDocumentChatMessage(messageId) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { error: 'Not authenticated' };
+
+    const { error } = await supabase
+        .from('document_chat_messages')
+        .delete()
+        .eq('id', messageId);
+
+    return { error };
+}
+
+export async function clearDocumentChatMessages(docId) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { error: 'Not authenticated' };
+
+    const { error } = await supabase
+        .from('document_chat_messages')
+        .delete()
+        .eq('document_id', docId);
+
+    return { error };
+}
+
+export function subscribeToDocumentChat(docId, { onInsert, onDelete, onError } = {}) {
+    const channel = supabase
+        .channel(`document-chat:${docId}:${Date.now()}`)
+        .on(
+            'postgres_changes',
+            {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'document_chat_messages',
+                filter: `document_id=eq.${docId}`
+            },
+            (payload) => {
+                if (onInsert) onInsert(payload.new);
+            }
+        )
+        .on(
+            'postgres_changes',
+            {
+                event: 'DELETE',
+                schema: 'public',
+                table: 'document_chat_messages',
+                filter: `document_id=eq.${docId}`
+            },
+            (payload) => {
+                if (onDelete) onDelete(payload.old);
+            }
+        )
+        .subscribe((status) => {
+            if ((status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') && onError) {
+                onError(status);
+            }
+        });
+
+    return () => {
+        supabase.removeChannel(channel);
+    };
+}

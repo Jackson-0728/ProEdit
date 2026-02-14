@@ -3,7 +3,7 @@ import './editor-minimal.css';
 import { generateContent, evaluateModels, generateLayouts } from './api/gemini.js';
 import { CollaborationManager } from './api/collaboration.js';
 import {
-  supabase, signIn, signUp, signOut, signInWithProvider, resetPassword, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument, getDocumentPermissions, addComment, getComments, updateComment, deleteComment
+  supabase, signIn, signUp, signOut, signInWithProvider, resetPassword, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument, getDocumentPermissions, addComment, getComments, updateComment, deleteComment, getDocumentChatMessages, createDocumentChatMessage, deleteDocumentChatMessage, clearDocumentChatMessages, subscribeToDocumentChat
 } from './api/supabase.js';
 
 
@@ -13,6 +13,8 @@ let currentDocId = null;
 let user = null;
 let collaborationManager = null;
 let collabUsers = [];
+let documentChatUnsubscribe = null;
+let pendingCommentSelection = null;
 
 // DOM Elements
 const app = document.querySelector('#app');
@@ -1022,6 +1024,10 @@ async function renderEditor() {
 
   // Init Collaboration
   if (collaborationManager) collaborationManager.leave();
+  if (documentChatUnsubscribe) {
+    documentChatUnsubscribe();
+    documentChatUnsubscribe = null;
+  }
 
   if (user) {
     collaborationManager = new CollaborationManager(currentDocId, user, {
@@ -1420,6 +1426,10 @@ async function renderEditor() {
                 <i class="iconoir-plus-circle"></i>
                 <span>Expand</span>
               </button>
+              <button class="edit-popup-btn" data-action="comment">
+                <i class="iconoir-message-text"></i>
+                <span>Comment</span>
+              </button>
               <div class="edit-popup-divider"></div>
               <button class="edit-popup-btn" data-action="custom">
                 <i class="iconoir-edit-pencil"></i>
@@ -1474,6 +1484,10 @@ function openDoc(id) {
 }
 
 function closeDoc() {
+  if (documentChatUnsubscribe) {
+    documentChatUnsubscribe();
+    documentChatUnsubscribe = null;
+  }
   currentDocId = null;
   // Reset URL
   const newUrl = window.location.origin;
@@ -1799,7 +1813,7 @@ function setupEditorListeners() {
 
   if (sidebarBackBtn) {
     sidebarBackBtn.addEventListener('click', () => {
-      renderDashboard();
+      closeDoc();
     });
   }
 
@@ -1816,6 +1830,7 @@ function setupEditorListeners() {
         const isVisible = commentsSidebar.style.display !== 'none';
         commentsSidebar.style.display = isVisible ? 'none' : 'flex';
         sidebarCommentBtn.classList.toggle('active', !isVisible);
+        if (!isVisible) loadComments();
       }
     });
   }
@@ -3105,6 +3120,28 @@ function setupEditorListeners() {
       case 'expand':
         prompt = `Expand the following text with more details and context. Make it more comprehensive. Return ONLY the expanded text, no explanations:\n\n"${selectedText}"`;
         break;
+      case 'comment': {
+        const commentsSidebar = document.getElementById('commentsSidebar');
+        const newCommentInput = document.getElementById('newCommentInput');
+        const excerpt = selectedText.length > 220 ? `${selectedText.slice(0, 220)}...` : selectedText;
+        pendingCommentSelection = {
+          quote: selectedText,
+          created_at: new Date().toISOString()
+        };
+
+        if (commentsSidebar) commentsSidebar.style.display = 'flex';
+        if (sidebarCommentBtn) sidebarCommentBtn.classList.add('active');
+        if (newCommentInput) {
+          newCommentInput.value = `Re: "${excerpt}"\n`;
+          newCommentInput.focus();
+        }
+        loadComments();
+        textEditPopup.classList.remove('visible');
+        editPopupCustom.classList.remove('visible');
+        selectedText = '';
+        selectedTextRange = null;
+        return;
+      }
       case 'custom':
         if (!customPrompt) return;
         prompt = `${customPrompt}\n\nOriginal text: "${selectedText}"\n\nReturn ONLY the edited text, no explanations.`;
@@ -3119,7 +3156,7 @@ function setupEditorListeners() {
     if (editPopupSubmit) editPopupSubmit.disabled = true;
 
     try {
-      const selectedModel = aiModelSelector.value;
+      const selectedModel = aiModelSelector?.value || savedModel;
       const response = await generateContent(prompt, selectedModel);
       const editedText = response.trim();
 
@@ -3248,12 +3285,66 @@ function setupEditorListeners() {
     });
   }
 
-  const sendChatMsg = async () => {
-    const msg = chatInput.value.trim();
-    if (!msg || !collaborationManager) return;
+  const clearCollabChatBtn = document.getElementById('clearCollabChat');
+  const chatMessagesEl = document.getElementById('chatMessages');
+  const chatMessageIds = new Set();
 
-    collaborationManager.sendChat(msg);
+  const renderChatHistory = (messages) => {
+    if (!chatMessagesEl) return;
+    chatMessagesEl.innerHTML = '';
+    chatMessageIds.clear();
+    (messages || []).forEach((msg) => {
+      if (msg?.id != null) chatMessageIds.add(msg.id);
+      addChatMessage(msg, { persist: false });
+    });
+  };
+
+  const upsertIncomingChatMessage = (msg) => {
+    if (!msg || msg.document_id !== currentDocId) return;
+    if (msg.id != null && chatMessageIds.has(msg.id)) return;
+    if (msg.id != null) chatMessageIds.add(msg.id);
+    addChatMessage(msg, { persist: false });
+  };
+
+  const removeIncomingChatMessage = (msg) => {
+    if (!msg?.id) return;
+    chatMessageIds.delete(msg.id);
+    const row = document.querySelector(`[data-chat-id="${msg.id}"]`);
+    if (row) row.remove();
+  };
+
+  const loadDocumentChat = async () => {
+    if (!currentDocId) return;
+    const { data, error } = await getDocumentChatMessages(currentDocId);
+    if (error) {
+      console.error('Failed to load chat history:', error);
+      alert('Failed to load chat history');
+      return;
+    }
+    renderChatHistory(data || []);
+  };
+
+  loadDocumentChat();
+  if (documentChatUnsubscribe) documentChatUnsubscribe();
+  documentChatUnsubscribe = subscribeToDocumentChat(currentDocId, {
+    onInsert: upsertIncomingChatMessage,
+    onDelete: removeIncomingChatMessage,
+    onError: (status) => console.error('Chat realtime channel error:', status)
+  });
+
+  const sendChatMsg = async () => {
+    if (!chatInput || !currentDocId) return;
+    const msg = chatInput.value.trim();
+    if (!msg) return;
+
     chatInput.value = '';
+    const { data: sentMessage, error } = await createDocumentChatMessage(currentDocId, msg, 'user');
+    if (error) {
+      console.error('Failed to send chat message:', error);
+      alert('Failed to send message');
+      return;
+    }
+    if (sentMessage) upsertIncomingChatMessage(sentMessage);
 
     // AI Interception
     if (msg.toLowerCase().startsWith('@ai')) {
@@ -3261,18 +3352,16 @@ function setupEditorListeners() {
       if (!query) return;
 
       try {
-        // Get context for better answers
         const context = editor.innerText.substring(0, 1000);
         const prompt = `Context: ${context}\n\nUser Question: ${query}\n\nAnswer briefly as a helpful assistant in the chat.`;
-
-        const response = await generateContent(prompt);
-
-        // Send as 'ai' role (rendering needs to handle this)
-        collaborationManager.sendChat(response, 'ai');
-
+        const selectedModel = aiModelSelector?.value || savedModel;
+        const response = await generateContent(prompt, selectedModel);
+        const { data: aiMessage } = await createDocumentChatMessage(currentDocId, response, 'ai');
+        if (aiMessage) upsertIncomingChatMessage(aiMessage);
       } catch (e) {
-        console.error("AI Chat Error", e);
-        collaborationManager.sendChat("Failed to get AI response.", 'ai');
+        console.error('AI Chat Error', e);
+        const { data: aiFailureMessage } = await createDocumentChatMessage(currentDocId, 'Failed to get AI response.', 'ai');
+        if (aiFailureMessage) upsertIncomingChatMessage(aiFailureMessage);
       }
     }
   };
@@ -3282,6 +3371,20 @@ function setupEditorListeners() {
       if (e.key === 'Enter') sendChatMsg();
     });
     chatWidget.querySelector('.ai-send')?.addEventListener('click', sendChatMsg);
+  }
+
+  if (clearCollabChatBtn) {
+    clearCollabChatBtn.addEventListener('click', async () => {
+      if (!currentDocId) return;
+      const { error } = await clearDocumentChatMessages(currentDocId);
+      if (error) {
+        console.error('Failed to clear chat:', error);
+        alert('Failed to clear chat');
+        return;
+      }
+      await loadDocumentChat();
+      alert('Chat cleared');
+    });
   }
 
   // Cursor Tracking
@@ -3960,45 +4063,50 @@ function clearCollabChatMessages() {
   if (chatMessages) chatMessages.innerHTML = '';
 }
 
-function addChatMessage({ userEmail, message, role, timestamp }, { persist = true } = {}) {
-  if (persist) persistCollabChatMessage({ userEmail, message, role, timestamp });
+function addChatMessage({ id, userEmail, message, role, timestamp, created_at }, { persist = false } = {}) {
+  if (persist) persistCollabChatMessage({ userEmail, message, role, timestamp: timestamp || created_at });
 
   const chatMessages = document.getElementById('chatMessages');
   if (!chatMessages) return;
 
+  const safeMessage = String(message ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>');
+
   const div = document.createElement('div');
   const isMe = userEmail && user?.email && userEmail === user.email;
   const isAi = role === 'ai';
+  const when = timestamp || created_at || new Date().toISOString();
+  const senderName = isAi ? 'AI Assistant' : (isMe ? 'You' : (userEmail ? userEmail.split('@')[0] : 'Unknown'));
+  const deleteBtn = (isMe && !isAi && id != null)
+    ? `<button class="chat-delete-btn" onclick="window.deleteChatMessageAction(${id})">Delete</button>`
+    : '';
 
-  div.className = `chat-message ${isMe ? 'me' : 'other'}`;
-  div.style.marginBottom = '0.75rem';
-  div.style.display = 'flex';
-  div.style.flexDirection = 'column';
-  div.style.alignItems = isMe && !isAi ? 'flex-end' : 'flex-start'; // AI always left aligned or distinct
-
-  const senderName = isAi ? '✨ AI Assistant' : (isMe ? 'You' : (userEmail ? userEmail.split('@')[0] : 'Unknown'));
-  const bg = isAi ? 'linear-gradient(135deg, #a855f7, #ec4899)' : (isMe ? 'var(--primary)' : 'var(--bg-secondary)');
-  const color = isAi || isMe ? 'white' : 'var(--text-main)';
+  div.className = `chat-message-row ${isMe && !isAi ? 'me' : 'other'} ${isAi ? 'ai' : ''}`;
+  if (id != null) div.dataset.chatId = String(id);
 
   div.innerHTML = `
-                                              <div class="message-meta" style="font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.25rem;">
-                                                <span class="sender">${senderName}</span>
-                                                <span class="time">${new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                              </div>
-                                              <div class="message-content" style="
-            background: ${bg}; 
-            color: ${color};
-            padding: 0.5rem 0.75rem;
-            border-radius: ${isMe && !isAi ? '12px 12px 0 12px' : '12px 12px 12px 0'};
-            max-width: 85%;
-            font-size: 0.9rem;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-        ">${message}</div>
-                                              `;
+    <div class="chat-message-meta">
+      <span class="chat-sender">${senderName}</span>
+      <span class="chat-time">${new Date(when).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+      ${deleteBtn}
+    </div>
+    <div class="chat-bubble">${safeMessage}</div>
+  `;
 
   chatMessages.appendChild(div);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
+
+window.deleteChatMessageAction = async (id) => {
+  const { error } = await deleteDocumentChatMessage(id);
+  if (error) {
+    console.error('Failed to delete chat message:', error);
+    alert('Failed to delete message');
+  }
+};
 
 // --- COMMENTS LOGIC ---
 
@@ -4031,7 +4139,8 @@ async function setupComments() {
       addCommentBtn.disabled = true;
       addCommentBtn.textContent = 'Posting...';
 
-      const { error } = await addComment(currentDocId, content);
+      const selectionPayload = pendingCommentSelection ? { ...pendingCommentSelection } : null;
+      const { error } = await addComment(currentDocId, content, selectionPayload);
 
       addCommentBtn.disabled = false;
       addCommentBtn.textContent = 'Post';
@@ -4040,6 +4149,7 @@ async function setupComments() {
         alert('Failed to post comment');
       } else {
         newCommentInput.value = '';
+        pendingCommentSelection = null;
         loadComments();
       }
     });
@@ -4050,17 +4160,17 @@ async function loadComments() {
   const commentsList = document.getElementById('commentsList');
   if (!commentsList) return;
 
-  commentsList.innerHTML = '<div style="text-align:center; padding: 1rem;">Loading...</div>';
+  commentsList.innerHTML = '<div class="panel-empty">Loading comments...</div>';
 
   const { data: comments, error } = await getComments(currentDocId);
 
   if (error) {
-    commentsList.innerHTML = '<div style="color:red; text-align:center;">Failed to load comments</div>';
+    commentsList.innerHTML = '<div class="panel-empty">Failed to load comments</div>';
     return;
   }
 
   if (!comments || comments.length === 0) {
-    commentsList.innerHTML = '<div style="color:gray; text-align:center; padding: 1rem;">No comments yet</div>';
+    commentsList.innerHTML = '<div class="panel-empty">No comments yet</div>';
     return;
   }
 
@@ -4068,18 +4178,36 @@ async function loadComments() {
 
   commentsList.innerHTML = comments.map(c => {
     const isOwner = currentUser && c.user_id === currentUser.id;
-    const deleteBtn = isOwner ? `<button onclick="window.deleteCommentAction(${c.id})" style="color:red; background:none; border:none; cursor:pointer; font-size:0.8rem;">Delete</button>` : '';
+    const safeAuthor = String(c.user_email?.split('@')[0] || 'unknown')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    const safeContent = String(c.content || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\n/g, '<br>');
+    const selectionQuote = c.selection_range?.quote;
+    const safeQuote = selectionQuote
+      ? String(selectionQuote)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+      : '';
+    const deleteBtn = isOwner ? `<button class="comment-delete-btn" onclick="window.deleteCommentAction(${c.id})">Delete</button>` : '';
 
     return `
-                                              <div class="comment-card">
-                                                <div class="comment-meta">
-                                                  <span class="comment-author">${c.user_email.split('@')[0]}</span>
-                                                  <span class="comment-time">${new Date(c.created_at).toLocaleDateString()}</span>
-                                                  ${deleteBtn}
-                                                </div>
-                                                <div class="comment-content">${c.content}</div>
-                                              </div>
-                                              `;
+      <div class="comment-card">
+        <div class="comment-meta">
+          <span class="comment-author">${safeAuthor}</span>
+          <span class="comment-time">${new Date(c.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          ${deleteBtn}
+        </div>
+        ${selectionQuote ? `<div class="comment-quote">"${safeQuote}"</div>` : ''}
+        <div class="comment-content">${safeContent}</div>
+      </div>
+    `;
   }).join('');
 }
 
