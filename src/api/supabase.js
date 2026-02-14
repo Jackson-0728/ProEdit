@@ -40,8 +40,11 @@ export async function signOut() {
 // import { supabase } from './supabaseClient'; // Example import
 
 export async function resetPassword(email) {
+    const configuredRedirect = import.meta.env.VITE_PASSWORD_RESET_REDIRECT_URL;
+    const redirectTo = configuredRedirect || `${window.location.origin}/reset-password`;
+
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo,
     });
 
     if (error) {
@@ -135,13 +138,56 @@ export async function deleteDocument(id) {
 
 // --- SHARING & PERMISSIONS ---
 
-export async function shareDocument(docId, userEmail, role) {
+async function sendShareInviteEmail({ documentId, recipientEmail, role, docTitle, docLink }) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const accessToken = session?.access_token;
+
+    if (!accessToken) {
+        return { data: null, error: new Error('Not authenticated') };
+    }
+
+    try {
+        const response = await fetch('/api/share-invite-email', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+                documentId,
+                recipientEmail,
+                role,
+                docTitle,
+                docLink
+            })
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            return {
+                data: null,
+                error: new Error(payload?.error || 'Failed to send invitation email')
+            };
+        }
+
+        return { data: payload, error: null };
+    } catch (error) {
+        return { data: null, error };
+    }
+}
+
+export async function shareDocument(docId, userEmail, role, options = {}) {
+    const normalizedEmail = String(userEmail || '').trim().toLowerCase();
+    if (!normalizedEmail) {
+        return { data: null, error: new Error('Email is required'), emailError: null };
+    }
+
     // Check if permission already exists
     const { data: existing } = await supabase
         .from('document_permissions')
         .select('*')
         .eq('document_id', docId)
-        .eq('user_email', userEmail)
+        .eq('user_email', normalizedEmail)
         .single();
 
     let result;
@@ -155,9 +201,23 @@ export async function shareDocument(docId, userEmail, role) {
         // Insert new
         result = await supabase
             .from('document_permissions')
-            .insert([{ document_id: docId, user_email: userEmail, role }]);
+            .insert([{ document_id: docId, user_email: normalizedEmail, role }]);
     }
-    return result;
+
+    let emailError = null;
+    if (!result.error && options.sendEmail) {
+        const { error } = await sendShareInviteEmail({
+            documentId: docId,
+            recipientEmail: normalizedEmail,
+            role,
+            docTitle: options.docTitle || 'Untitled Document',
+            docLink: options.docLink || `${window.location.origin}?doc=${docId}`
+        });
+
+        if (error) emailError = error;
+    }
+
+    return { data: result.data || null, error: result.error || null, emailError };
 }
 
 export async function getDocumentPermissions(docId) {

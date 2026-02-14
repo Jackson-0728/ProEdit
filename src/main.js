@@ -24,13 +24,71 @@ let commentHighlightResizeHandler = null;
 
 // DOM Elements
 const app = document.querySelector('#app');
+const RESET_PASSWORD_PATH = '/reset-password';
 
 // --- INITIALIZATION ---
 
 window.renderLogin = renderLogin; // Expose to global scope for inline onclick handlers
 
+function normalizePathname(pathname) {
+  const normalized = String(pathname || '/').replace(/\/+$/, '');
+  return normalized || '/';
+}
+
+function isResetPasswordRoute() {
+  return normalizePathname(window.location.pathname) === RESET_PASSWORD_PATH;
+}
+
+async function establishRecoverySessionFromUrl() {
+  const rawHash = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash;
+  const hashParams = new URLSearchParams(rawHash);
+
+  const accessToken = hashParams.get('access_token');
+  const refreshToken = hashParams.get('refresh_token');
+  const recoveryType = hashParams.get('type');
+
+  if (!accessToken || !refreshToken || recoveryType !== 'recovery') {
+    return { consumed: false, error: null };
+  }
+
+  const { error } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken
+  });
+
+  if (error) {
+    return { consumed: true, error };
+  }
+
+  window.history.replaceState({}, '', RESET_PASSWORD_PATH);
+  return { consumed: true, error: null };
+}
+
+async function handleResetPasswordRoute() {
+  const { error } = await establishRecoverySessionFromUrl();
+  if (error) {
+    renderResetPassword({ valid: false, message: `This reset link is invalid or expired. ${error.message}` });
+    return;
+  }
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    renderResetPassword({ valid: false, message: 'This reset link is invalid or expired. Please request a new one.' });
+    return;
+  }
+
+  renderResetPassword({ valid: true });
+}
+
 
 async function init() {
+  if (isResetPasswordRoute()) {
+    await handleResetPasswordRoute();
+    return;
+  }
+
   const { data: { session } } = await supabase.auth.getSession();
   user = session?.user;
 
@@ -339,6 +397,126 @@ function renderLogin() {
 
   document.getElementById('googleBtn').addEventListener('click', () => signInWithProvider('google'));
   document.getElementById('githubBtn').addEventListener('click', () => signInWithProvider('github'));
+}
+
+function renderResetPassword({ valid = false, message = '' } = {}) {
+  app.innerHTML = `
+    <div class="login-container">
+      <div class="login-card">
+        <div class="login-header">
+          <div class="brand-logo">ProEdit</div>
+          <p class="brand-tagline">Set a new password for your account.</p>
+        </div>
+        <div class="error-msg ${valid ? 'success' : 'error'}" id="resetStatus" style="display: ${message ? 'block' : 'none'};"></div>
+        ${valid
+      ? `
+          <form id="resetPasswordForm" class="auth-form">
+            <div class="form-group">
+              <label class="form-label">New Password</label>
+              <div class="input-with-icon">
+                <i class="iconoir-lock"></i>
+                <input type="password" class="form-input" id="newPassword" placeholder="At least 8 characters" required minlength="8">
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Confirm Password</label>
+              <div class="input-with-icon">
+                <i class="iconoir-lock"></i>
+                <input type="password" class="form-input" id="confirmPassword" placeholder="Re-enter password" required minlength="8">
+              </div>
+            </div>
+            <button type="submit" class="auth-btn" id="resetPasswordSubmitBtn">
+              <span id="resetPasswordSubmitText">Update Password</span>
+            </button>
+          </form>
+        `
+      : `
+          <button class="auth-btn" id="resetBackToLoginBtn">
+            <span>Back to Login</span>
+          </button>
+        `}
+      </div>
+    </div>
+  `;
+
+  const statusEl = document.getElementById('resetStatus');
+  if (statusEl && message) {
+    statusEl.textContent = message;
+  }
+
+  if (!valid) {
+    const backBtn = document.getElementById('resetBackToLoginBtn');
+    if (backBtn) {
+      backBtn.addEventListener('click', () => {
+        window.history.replaceState({}, '', '/');
+        renderLogin();
+      });
+    }
+    return;
+  }
+
+  const form = document.getElementById('resetPasswordForm');
+  const newPassword = document.getElementById('newPassword');
+  const confirmPassword = document.getElementById('confirmPassword');
+  const submitBtn = document.getElementById('resetPasswordSubmitBtn');
+  const submitText = document.getElementById('resetPasswordSubmitText');
+
+  form?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const password = newPassword.value;
+    const confirm = confirmPassword.value;
+
+    if (statusEl) {
+      statusEl.style.display = 'none';
+      statusEl.className = 'error-msg error';
+    }
+
+    if (password.length < 8) {
+      if (statusEl) {
+        statusEl.textContent = 'Password must be at least 8 characters.';
+        statusEl.style.display = 'block';
+      }
+      return;
+    }
+
+    if (password !== confirm) {
+      if (statusEl) {
+        statusEl.textContent = 'Passwords do not match.';
+        statusEl.style.display = 'block';
+      }
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitText.textContent = 'Updating...';
+
+    const { error } = await supabase.auth.updateUser({ password });
+
+    submitBtn.disabled = false;
+    submitText.textContent = 'Update Password';
+
+    if (error) {
+      if (statusEl) {
+        statusEl.className = 'error-msg error';
+        statusEl.textContent = error.message || 'Failed to update password.';
+        statusEl.style.display = 'block';
+      }
+      return;
+    }
+
+    if (statusEl) {
+      statusEl.className = 'error-msg success';
+      statusEl.textContent = 'Password updated. Please sign in with your new password.';
+      statusEl.style.display = 'block';
+    }
+
+    await signOut();
+    setTimeout(() => {
+      window.history.replaceState({}, '', '/');
+      renderLogin();
+    }, 1000);
+  });
 }
 
 // Modern Dashboard Implementation
@@ -824,7 +1002,7 @@ function renderDashboard() {
             showLayoutSelection(layouts);
           } else {
             // Fallback or error
-            alert('Could not generate layouts. Please try again.');
+            alert('Layout generation returned no usable options. Please try a more specific prompt.');
           }
         } catch (e) {
           console.error(e);
@@ -1043,11 +1221,22 @@ async function renderEditor() {
       onTextUpdate: (payload) => {
         const editor = document.getElementById('editor');
         if (editor) {
-          const selection = window.getSelection();
-          const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+          const editorArea = editor.closest('.editor-area');
+          const savedScrollTop = editorArea ? editorArea.scrollTop : null;
+          const savedScrollLeft = editorArea ? editorArea.scrollLeft : null;
+          const selectionOffsets = getCurrentSelectionOffsetsInEditor(editor);
+
           editor.innerHTML = payload.content;
-          // Very basic cursor preservation attempt (often fails on big diffs)
-          if (range) selection.addRange(range);
+
+          if (selectionOffsets) {
+            restoreSelectionOffsetsInEditor(editor, selectionOffsets);
+          }
+
+          if (editorArea && savedScrollTop != null) {
+            editorArea.scrollTop = savedScrollTop;
+            editorArea.scrollLeft = savedScrollLeft || 0;
+          }
+
           scheduleCommentHighlightsRender();
         }
       }
@@ -3259,14 +3448,23 @@ function setupEditorListeners() {
       const email = document.getElementById('shareEmail').value;
       const role = document.getElementById('shareRole').value;
       if (!email) return;
+      const currentDoc = documents.find(d => d.id === currentDocId);
 
       sendInviteBtn.disabled = true;
       sendInviteBtn.textContent = 'Inviting...';
 
       try {
-        const { error } = await shareDocument(currentDocId, email, role);
+        const { error, emailError } = await shareDocument(currentDocId, email, role, {
+          sendEmail: true,
+          docTitle: currentDoc?.title || 'Untitled Document',
+          docLink: `${window.location.origin}?doc=${currentDocId}`
+        });
         if (error) throw error;
-        alert('Invitation sent!');
+        if (emailError) {
+          alert(`Access granted, but invitation email failed: ${emailError.message}`);
+        } else {
+          alert('Invitation sent!');
+        }
         document.getElementById('shareEmail').value = '';
       } catch (e) {
         console.error(e);
@@ -4166,6 +4364,42 @@ function getRangeOffsetsWithinEditor(editor, range) {
   return { start, end };
 }
 
+function getCurrentSelectionOffsetsInEditor(editor) {
+  if (!editor) return null;
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return null;
+
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer) && range.commonAncestorContainer !== editor) {
+    return null;
+  }
+
+  return getRangeOffsetsWithinEditor(editor, range);
+}
+
+function restoreSelectionOffsetsInEditor(editor, offsets) {
+  if (!editor || !offsets) return;
+
+  const start = Number(offsets.start);
+  const end = Number(offsets.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+
+  const { textNodes } = buildEditorTextIndex(editor);
+  if (!textNodes.length) return;
+
+  const maxOffset = textNodes[textNodes.length - 1].end;
+  const safeStart = Math.max(0, Math.min(start, maxOffset));
+  const safeEnd = Math.max(0, Math.min(end, maxOffset));
+  const range = createRangeFromOffsets(textNodes, safeStart, safeEnd, { allowCollapsed: true });
+  if (!range) return;
+
+  const selection = window.getSelection();
+  if (!selection) return;
+
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
 function openCommentsSidebar() {
   const commentsSidebar = document.getElementById('commentsSidebar');
   const sidebarCommentBtn = document.getElementById('sidebarCommentBtn');
@@ -4266,13 +4500,14 @@ function resolveOffsetToNode(textNodes, offset, preferNext = false) {
   return { node: last.node, offset: last.node.nodeValue.length };
 }
 
-function createRangeFromOffsets(textNodes, start, end) {
+function createRangeFromOffsets(textNodes, start, end, { allowCollapsed = false } = {}) {
   if (!textNodes.length) return null;
 
   const maxOffset = textNodes[textNodes.length - 1].end;
   const safeStart = Math.max(0, Math.min(start, maxOffset));
   const safeEnd = Math.max(0, Math.min(end, maxOffset));
-  if (safeEnd <= safeStart) return null;
+  if (safeEnd < safeStart) return null;
+  if (safeEnd === safeStart && !allowCollapsed) return null;
 
   const startPoint = resolveOffsetToNode(textNodes, safeStart, false);
   const endPoint = resolveOffsetToNode(textNodes, safeEnd, false);
@@ -4281,7 +4516,7 @@ function createRangeFromOffsets(textNodes, start, end) {
   const range = document.createRange();
   range.setStart(startPoint.node, startPoint.offset);
   range.setEnd(endPoint.node, endPoint.offset);
-  if (range.collapsed) return null;
+  if (range.collapsed && !allowCollapsed) return null;
   return range;
 }
 
@@ -4736,7 +4971,8 @@ window.updateRoleAction = async (email, newRole) => {
   if (!confirm(`Change ${email} to ${newRole}?`)) return loadSharePermissions(); // Revert if cancelled
 
   try {
-    await shareDocument(currentDocId, email, newRole);
+    const { error } = await shareDocument(currentDocId, email, newRole);
+    if (error) throw error;
     alert('Role updated!');
   } catch (e) {
     alert('Failed to update role');
@@ -4745,6 +4981,11 @@ window.updateRoleAction = async (email, newRole) => {
   loadSharePermissions();
 };
 window.addEventListener('popstate', () => {
+  if (isResetPasswordRoute()) {
+    handleResetPasswordRoute();
+    return;
+  }
+
   // Basic handling for back/forward browser buttons
   const urlParams = new URLSearchParams(window.location.search);
   const docId = urlParams.get('doc');
