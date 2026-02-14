@@ -46,10 +46,7 @@ app.post('/api/generate', async (req, res) => {
             : 'gemini-2.5-flash';
 
         const model = genAI.getGenerativeModel({
-            model: modelName,
-            generationConfig: {
-                responseMimeType: task === 'layout_generation' ? 'application/json' : 'text/plain'
-            }
+            model: modelName
         });
 
         if (!prompt) {

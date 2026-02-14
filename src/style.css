@@ -588,6 +588,24 @@ body {
     cursor: not-allowed;
 }
 
+/* Draggable modals */
+.modal-card.draggable-modal-card {
+    will-change: left, top;
+}
+
+.modal-header.draggable-modal-header {
+    cursor: grab;
+    user-select: none;
+}
+
+.modal-overlay.dragging .modal-header.draggable-modal-header {
+    cursor: grabbing;
+}
+
+body.modal-dragging {
+    user-select: none;
+}
+
 /* Slash Menu */
 .slash-menu {
     position: absolute;

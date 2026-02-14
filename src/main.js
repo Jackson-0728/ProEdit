@@ -1,4 +1,5 @@
 import './style.css';
+import './editor-minimal.css';
 import { generateContent, evaluateModels, generateLayouts } from './api/gemini.js';
 import { CollaborationManager } from './api/collaboration.js';
 import {
@@ -336,20 +337,6 @@ function renderLogin() {
 // This file contains the complete renderDashboard function with multi-view support
 
 function renderDashboard() {
-  // Domain Error Page Check
-  if (window.location.hostname === 'app-proedit.vercel.app' || window.location.search.includes('forceError=true')) {
-    app.innerHTML = `
-         <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #fff; color: #111; font-family: system-ui, -apple-system, sans-serif;">
-           <video autoplay loop muted playsinline style="max-width: 300px; width: 100%; border-radius: 12px; box-shadow: 0 0px 0px rgba(0,0,0,0.0);">
-             <source src="/assets/Caveman - 404 Page.mp4" type="video/mp4">
-           </video>
-           <span style="margin-top: 2rem; font-size: 2.5rem; font-weight: 700;" class="gradient-text">Server Maintenance</span>
-           <p style="margin-top: 1rem; font-size: 1.2rem; color: #888; max-width: 500px; line-height: 1.6;">There's a problem with our server. We will be back in less than a week.</p>
-         </div>
-       `;
-    return;
-  }
-
   const userName = user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'User');
   const userEmail = user.email || 'user@proedit.com';
   let currentView = 'dashboard'; // 'dashboard' or 'documents'
@@ -769,6 +756,7 @@ function renderDashboard() {
       </div>
     `;
     document.body.appendChild(modal);
+    enableDraggableModals(modal);
 
     modal.querySelectorAll('.layout-option').forEach(card => {
       card.addEventListener('click', async () => {
@@ -1068,175 +1056,125 @@ async function renderEditor() {
   const contentEditableState = isEditable ? 'true' : 'false';
 
   app.innerHTML = `
-  <div class="editor-layout">
-    <!--Beta Top Bar-->
-    <div id="betaBar" style="background: #18181b; color: white; padding: 0.5rem 1rem; display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem;">
-      <div style="display: flex; gap: 0.5rem; align-items: center;">
-        <span style="background: #3b82f6; padding: 0.1rem 0.4rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: bold;">BETA</span>
-        <span>ProEdit is currently in beta. We appreciate your feedback!</span>
-      </div>
-      <div style="display: flex; gap: 1rem; align-items: center;">
-        <button id="betaFeedback" style="background: transparent; color: white; border: 1px solid #3f3f46; padding: 0.25rem 0.75rem; border-radius: 0.25rem; cursor: pointer;">Give Feedback</button>
-        <button id="closeBeta" style="background: transparent; border: none; color: #a1a1aa; cursor: pointer; font-size: 1.2rem;">×</button>
+  <div class="editor-layout editor-layout-editor">
+    <!-- Top Bar: Title + Avatars only -->
+    <div class="top-bar">
+      <input type="text" class="doc-title" id="docTitle" value="${doc.title || 'Untitled'}" placeholder="Untitled Document"/>
+      <div class="top-bar-presence">
+        <span class="presence-label">Online</span>
+        <div class="avatars-stack" id="avatarStack"></div>
       </div>
     </div>
-    <!--Top Bar: Menu + Toolbar-->
-    <div class="top-bar">
-      <div class="menu-bar">
-        <button class="icon-btn" id="backBtn" title="Back to Dashboard" style="margin-right: 1rem;">
+
+    <div class="editor-workspace">
+      <!-- Circular Sidebar -->
+      <div class="circular-sidebar">
+        <button class="sidebar-icon" id="sidebarBackBtn" title="Back to Dashboard">
           <i class="iconoir-arrow-left"></i>
         </button>
-        <div class="doc-info">
-          <input type="text" class="doc-title-input" id="docTitle" value="${doc.title || 'Untitled Document'}" placeholder="Untitled Document">
-        </div>
-        <div style="flex: 1"></div>
-        <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <button class="prostyle-btn" id="proStyleBtn" title="Generate HTML components with AI">
-            <span class="prostyle-icon">AI</span>
-            <span>ProStyle</span>
-          </button>
-          <button class="deploy-btn ${doc.is_public ? 'published' : ''}" id="deployBtn" title="Deploy to Web">
-            <i class="iconoir-rocket"></i>
-            <span id="deployText">${doc.is_public ? 'Published' : 'Deploy'}</span>
-          </button>
-
-          <!-- Collaborative Tools -->
-          <div class="avatars-stack" id="avatarStack"></div>
-
-          <button class="deploy-btn" id="shareBtn" style="border-color: var(--primary); color: var(--primary);">
-            <i class="iconoir-share-android"></i> Share
-          </button>
-          <button class="deploy-btn" id="chatToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);">
-            <i class="iconoir-chat-bubble"></i> Chat
-          </button>
-          <button class="deploy-btn" id="commentsToggleBtn" style="border-color: var(--text-muted); color: var(--text-muted);" title="Comments">
-            <i class="iconoir-message-text"></i> Comment
-          </button>
-
-        </div>
+        <div class="sidebar-divider"></div>
+        <button class="sidebar-icon" id="sidebarShareBtn" title="Share">
+          <i class="iconoir-share-android"></i>
+        </button>
+        <button class="sidebar-icon" id="sidebarCommentBtn" title="Comments">
+          <i class="iconoir-message-text"></i>
+        </button>
+        <button class="sidebar-icon" id="sidebarChatBtn" title="Chat">
+          <i class="iconoir-chat-bubble"></i>
+        </button>
+        <button class="sidebar-icon ${doc.is_public ? 'active' : ''}" id="sidebarDeployBtn" title="${doc.is_public ? 'Published' : 'Deploy'}">
+          <i class="iconoir-rocket"></i>
+        </button>
       </div>
 
-      <!-- Toolbar (Existing) -->
-      <div class="toolbar">
-        <div class="toolbar-group">
-          <button class="tool-btn" onclick="document.execCommand('undo')" title="Undo">
-            <i class="iconoir-undo"></i>
-          </button>
-          <button class="tool-btn" onclick="document.execCommand('redo')" title="Redo">
-            <i class="iconoir-redo"></i>
-          </button>
+      <!-- Main Editor Layout (Original) -->
+      <div class="editor-container">
+        <!-- Toolbar -->
+        <div class="toolbar">
+        <button class="tool-btn" id="undoBtn" title="Undo">
+          <i class="iconoir-undo"></i>
+        </button>
+        <button class="tool-btn" id="redoBtn" title="Redo">
+          <i class="iconoir-redo"></i>
+        </button>
+
+        <select id="fontFamily" class="font-select">
+          <option value="Arial">Arial</option>
+          <option value="Inter">Inter</option>
+          <option value="Merriweather">Merriweather</option>
+          <option value="Playfair Display">Playfair</option>
+          <option value="Georgia">Georgia</option>
+        </select>
+
+        <input id="fontSize" class="font-size-select" type="number" min="12" max="248" value="16"/>
+
+        <button class="tool-btn" data-cmd="bold" title="Bold (⌘B)">
+          <i class="iconoir-bold"></i>
+        </button>
+        <button class="tool-btn" data-cmd="italic" title="Italic (⌘I)">
+          <i class="iconoir-italic"></i>
+        </button>
+        <button class="tool-btn" data-cmd="underline" title="Underline (⌘U)">
+          <i class="iconoir-underline"></i>
+        </button>
+
+        <button class="tool-btn" data-cmd="justifyLeft" title="Align Left">
+          <i class="iconoir-align-left"></i>
+        </button>
+        <button class="tool-btn" data-cmd="justifyCenter" title="Align Center">
+          <i class="iconoir-align-center"></i>
+        </button>
+        <button class="tool-btn" data-cmd="justifyRight" title="Align Right">
+          <i class="iconoir-align-right"></i>
+        </button>
+        <button class="tool-btn" data-cmd="justifyFull" title="Justify">
+          <i class="iconoir-align-justify"></i>
+        </button>
+
+        <button class="tool-btn" data-cmd="insertUnorderedList" title="Bullet list">
+          <i class="iconoir-list"></i>
+        </button>
+        <button class="tool-btn" data-cmd="insertOrderedList" title="Numbered list">
+          <i class="iconoir-numbered-list-left"></i>
+        </button>
+
+        <button class="tool-btn" id="exportBtn2" title="Download">
+          <i class="iconoir-download"></i>
+        </button>
         </div>
 
-        <div class="toolbar-group">
-          <select class="tool-select" id="fontFamily" title="Font">
-            <option value="Arial">Arial</option>
-            <option value="Inter">Inter</option>
-            <option value="Roboto">Roboto</option>
-            <option value="Open Sans">Open Sans</option>
-            <option value="Merriweather">Merriweather</option>
-            <option value="Playfair Display">Playfair Display</option>
-            <option value="Courier Prime">Courier Prime</option>
-            <option value="Comic Neue">Comic Neue</option>
-            <option value="Lobster">Lobster</option>
-            <option value="Pacifico">Pacifico</option>
-            <option value="Oswald">Oswald</option>
-          </select>
-          <select class="tool-select" id="fontSize" title="Font Size">
-            <option value="1">10px</option>
-            <option value="2">13px</option>
-            <option value="3" selected>16px</option>
-            <option value="4">18px</option>
-            <option value="5">24px</option>
-            <option value="6">32px</option>
-            <option value="7">48px</option>
-          </select>
-        </div>
-
-        <div class="toolbar-group">
-          <button class="tool-btn" data-cmd="bold" title="Bold">
-            <i class="iconoir-bold"></i>
-          </button>
-          <button class="tool-btn" data-cmd="italic" title="Italic">
-            <i class="iconoir-italic"></i>
-          </button>
-          <button class="tool-btn" data-cmd="underline" title="Underline">
-            <i class="iconoir-underline"></i>
-          </button>
-        </div>
-
-        <div class="toolbar-group">
-          <button class="tool-btn" data-cmd="justifyLeft" title="Align Left">
-            <i class="iconoir-align-left"></i>
-          </button>
-          <button class="tool-btn" data-cmd="justifyCenter" title="Align Center">
-            <i class="iconoir-align-center"></i>
-          </button>
-          <button class="tool-btn" data-cmd="justifyRight" title="Align Right">
-            <i class="iconoir-align-right"></i>
-          </button>
-          <button class="tool-btn" data-cmd="justifyFull" title="Justify">
-            <i class="iconoir-align-justify"></i>
-          </button>
-        </div>
-
-        <div class="toolbar-group">
-          <button class="tool-btn" data-cmd="insertUnorderedList" title="Bullet List">
-            <i class="iconoir-list"></i>
-          </button>
-          <button class="tool-btn" data-cmd="insertOrderedList" title="Numbered List">
-            <i class="iconoir-numbered-list-left"></i>
-          </button>
-        </div>
-
-        <div class="toolbar-group">
-          <button class="tool-btn" id="pageBreakBtn" title="Insert Page Break">
-            <i class="iconoir-page-search"></i>
-          </button>
-        </div>
-
-        <div class="toolbar-group">
-          <div class="dropdown">
-            <button class="tool-btn" id="exportBtn" title="Export">
-              <i class="iconoir-download"></i>
-            </button>
-            <div class="dropdown-content">
-              <button onclick="window.exportDoc('pdf')">PDF (.pdf)</button>
-              <button onclick="window.exportDoc('word')">Word (.doc)</button>
-              <button onclick="window.exportDoc('md')">Markdown (.md)</button>
-            </div>
+        <!-- Editor -->
+        <div class="editor-area">
+          <div id="editor" contenteditable="${contentEditableState}" spellcheck="false" data-role="${userRole}">
+            ${doc.content || ''}
           </div>
         </div>
       </div>
     </div>
 
-    <div class="editor-scroll-container" id="editorScroll">
-      <div id="editor" contenteditable="${contentEditableState}" spellcheck="false" data-role="${userRole}">
-        ${doc.content || ''}
-      </div>
-
-      <!-- Comments Sidebar -->
-      <div class="comments-sidebar" id="commentsSidebar" style="display: none;">
-        <div class="comments-header">
+    <!-- Comments Sidebar -->
+    <div class="comments-sidebar comments-sidebar-modern" id="commentsSidebar" style="display: none;">
+      <div class="comments-header">
+        <div class="comments-title">
+          <i class="iconoir-message-text"></i>
           <span>Comments</span>
-          <button class="close-btn" id="closeComments">×</button>
         </div>
-        <div class="comments-list" id="commentsList"></div>
-        <div class="comment-input-area">
-          <textarea placeholder="Add a comment..." id="newCommentInput"></textarea>
-          <button class="primary-btn" id="addCommentBtn">Post</button>
-        </div>
+        <button class="close-btn" id="closeComments">×</button>
+      </div>
+      <div class="comments-list" id="commentsList"></div>
+      <div class="comment-input-area">
+        <textarea placeholder="Add a comment..." id="newCommentInput"></textarea>
+        <button class="primary-btn" id="addCommentBtn">Post</button>
       </div>
     </div>
 
-    <!-- Existing Modals & Buttons -->
-    <button class="ai-trigger" onclick="document.querySelector('.ai-popup').classList.toggle('visible')">
-      <i class="iconoir-sparks"></i>
-    </button>
-
     <!-- Chat Widget -->
-    <div class="chat-widget" id="chatWidget">
+    <div class="chat-widget chat-widget-modern" id="chatWidget" style="display: none;">
       <div class="chat-header">
-        <span>Chat</span>
+        <div class="chat-title">
+          <i class="iconoir-chat-bubble"></i>
+          <span>Team Chat</span>
+        </div>
         <div class="ai-controls">
           <button class="ai-btn-icon" id="clearCollabChat" title="Clear chat"><i class="iconoir-trash"></i></button>
           <button class="ai-btn-icon" id="closeCollabChat" title="Close">×</button>
@@ -1245,13 +1183,13 @@ async function renderEditor() {
       <div class="chat-messages" id="chatMessages"></div>
       <div class="chat-input-area">
         <input type="text" class="chat-input" id="chatInput" placeholder="Type a message...">
-          <button class="ai-send" type="button" style="width: 32px; height: 32px;"><i class="iconoir-send"></i></button>
+        <button class="ai-send" type="button"><i class="iconoir-send"></i></button>
       </div>
     </div>
 
     <!-- Share Modal -->
     <div class="modal-overlay" id="shareModal" style="display: none;">
-      <div class="modal-card" style="max-width: 450px;">
+      <div class="modal-card share-modal-card" style="max-width: 500px;">
         <div class="modal-header">
           <h3>Share Document</h3>
           <button class="close-btn" onclick="document.getElementById('shareModal').style.display='none'">×</button>
@@ -1277,7 +1215,61 @@ async function renderEditor() {
       </div>
     </div>
 
-    <!-- AI Trigger -->
+    <!-- Deploy Modal -->
+    <div class="modal-overlay" id="deployModal" style="display: none;">
+      <div class="modal-card deploy-modal-card" style="max-width: 520px;">
+        <div class="modal-header">
+          <h3>Published Document</h3>
+          <button class="close-btn" id="closeDeployModal">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="deploy-help" id="deployStatusText">This document is live. Share this link:</p>
+          <div class="deploy-link-row">
+            <input type="text" class="share-input deploy-link-input" id="deployLinkInput" readonly>
+            <button class="primary-btn" id="copyDeployLinkBtn">Copy</button>
+          </div>
+          <div class="deploy-actions">
+            <button class="ghost-btn" id="unpublishDocBtn">Unpublish</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Export Modal -->
+    <div class="modal-overlay" id="exportModal" style="display: none;">
+      <div class="modal-card" style="max-width: 400px;">
+        <div class="modal-header">
+          <h3>Export Document</h3>
+          <button class="close-btn" id="closeExportModal">×</button>
+        </div>
+        <div class="modal-body">
+          <p style="color: #6B7280; margin-bottom: 1rem; font-size: 0.875rem;">Choose a file format to download your document:</p>
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <button class="export-option-btn" data-format="pdf">
+              <i class="iconoir-page"></i>
+              <span>PDF Document (.pdf)</span>
+            </button>
+            <button class="export-option-btn" data-format="txt">
+              <i class="iconoir-page-edit"></i>
+              <span>Plain Text (.txt)</span>
+            </button>
+            <button class="export-option-btn" data-format="html">
+              <i class="iconoir-code"></i>
+              <span>HTML File (.html)</span>
+            </button>
+            <button class="export-option-btn" data-format="md">
+              <i class="iconoir-text"></i>
+              <span>Markdown (.md)</span>
+            </button>
+            <button class="export-option-btn" data-format="docx">
+              <i class="iconoir-page-plus"></i>
+              <span>Word Document (.docx)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <button class="ai-trigger" id="aiTrigger" title="Ask AI">
       <i class="iconoir-sparks"></i>
     </button>
@@ -1309,11 +1301,6 @@ async function renderEditor() {
       <div class="ai-header" id="aiHeader" style="cursor: move;">
         <div class="ai-title"><i class="iconoir-sparks"></i> AI Assistant</div>
         <div class="ai-controls">
-          <select class="model-selector" id="aiModelSelector" title="Select AI Model">
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-          </select>
           <button class="ai-btn-icon" id="clearAiChat" title="Clear chat"><i class="iconoir-trash"></i></button>
           <button class="ai-btn-icon" id="expandAi" title="Expand"><i class="iconoir-expand"></i></button>
           <button class="ai-btn-icon" id="closeAi" title="Close"><i class="iconoir-xmark-circle"></i></button>
@@ -1328,34 +1315,6 @@ async function renderEditor() {
       </div>
     </div>
 
-    <!-- ProStyle Modal -->
-    <div class="modal-overlay" id="proStyleModal" style="display: none;">
-      <div class="modal-card prostyle-card">
-        <div class="modal-header">
-          <h3>ProStyle Component Builder</h3>
-          <button class="close-btn" id="closeProStyle">×</button>
-        </div>
-        <div class="modal-body">
-          <p class="prostyle-subtitle">Describe the component you want and ProStyle will drop clean HTML into your doc.</p>
-          <div class="form-group">
-            <label>AI Model</label>
-            <select class="model-selector" id="proStyleModelSelector" style="width: 100%;">
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-              <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-            </select>
-          </div>
-          <textarea id="proStylePrompt" class="form-input" rows="3" placeholder="e.g., A two-column hero with headline, bullet list, and CTA button"></textarea>
-          <div class="prostyle-footer">
-            <div id="proStyleStatus" class="prostyle-status" style="display: none;"></div>
-            <div class="prostyle-actions">
-              <button class="ghost-btn" id="cancelProStyle" type="button">Cancel</button>
-              <button class="primary-btn" id="runProStyle" type="button">Generate & Insert</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
 
     <!-- Evaluation Modal -->
     <div class="modal-overlay" id="evalModal" style="display: none; ">
@@ -1442,62 +1401,8 @@ async function renderEditor() {
                         <textarea id="fbMessage" class="form-input" rows="4" required></textarea>
                       </div>
                       <button type="submit" class="primary-btn" style="width: 100%; margin-top: 1rem;">Submit Feedback</button>
-                    </form>
+          </form>
                   </div>
-              </div>
-            </div>
-
-            <!-- Help Button & Panel -->
-            <button class="help-trigger" id="helpTrigger" title="Help">
-              <i class="iconoir-help-circle"></i>
-              <span>Help</span>
-            </button>
-
-            <div class="help-panel" id="helpPanel" style="display: none;">
-              <div class="help-panel-header">
-                <h3>Need Help?</h3>
-                <button class="close-btn" id="closeHelp">×</button>
-              </div>
-              <div class="help-panel-body">
-                <button class="help-option" id="openAiChatBtn">
-                  <i class="iconoir-sparks"></i>
-                  <div>
-                    <div class="help-option-title">Ask AI Assistant</div>
-                    <div class="help-option-desc">Get help with how to use ProEdit</div>
-                  </div>
-                </button>
-                <button class="help-option" id="restartTutorialBtn">
-                  <i class="iconoir-graduation-cap"></i>
-                  <div>
-                    <div class="help-option-title">Restart Tutorial</div>
-                    <div class="help-option-desc">Take the guided tour again</div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <!-- Help Chat Popup -->
-            <div class="help-chat-popup" id="helpChatPopup">
-              <div class="help-chat-header" id="helpChatHeader">
-                <div class="help-chat-title">
-                  <i class="iconoir-sparks"></i>
-                  <span>ProEdit Assistant</span>
-                </div>
-                <div class="ai-controls">
-                  <button class="ai-btn-icon" id="clearHelpChat" title="Clear chat"><i class="iconoir-trash"></i></button>
-                  <button class="ai-btn-icon" id="closeHelpChat" title="Close">×</button>
-                </div>
-              </div>
-              <div class="help-chat-messages" id="helpChatMessages">
-                <div class="ai-message ai">
-                  Hello! I'm your ProEdit guide. Ask me anything about using the editor, formatting, or deploying your documents.
-                </div>
-              </div>
-              <div class="help-chat-input-area">
-                <input type="text" class="ai-input" id="helpChatInput" placeholder="How do I...">
-                  <button class="help-chat-send" id="helpChatSend">
-                    <i class="iconoir-send"></i>
-                  </button>
               </div>
             </div>
 
@@ -1531,15 +1436,11 @@ async function renderEditor() {
         </div>
         `;
 
+
   setupEditorListeners();
   setupBetaBar();
-
-  // Page Break Listener
-  document.getElementById('pageBreakBtn').addEventListener('click', () => {
-    const pageBreak = '<div class="page-break" contenteditable="false"></div>';
-    document.execCommand('insertHTML', false, pageBreak);
-  });
 }
+
 
 // --- ACTIONS ---
 
@@ -1734,6 +1635,124 @@ function renderPublicEditor() {
 
 let currentSelection = null;
 
+let customAlertHost = null;
+
+function ensureCustomAlertHost() {
+  if (customAlertHost && document.body.contains(customAlertHost)) return customAlertHost;
+  customAlertHost = document.createElement('div');
+  customAlertHost.className = 'custom-alert-host';
+  document.body.appendChild(customAlertHost);
+  return customAlertHost;
+}
+
+function showCustomAlert(message, type = 'info') {
+  const host = ensureCustomAlertHost();
+  const alertEl = document.createElement('div');
+  alertEl.className = `custom-alert ${type}`;
+  alertEl.innerHTML = `
+    <span class="custom-alert-icon"><i class="iconoir-info-circle"></i></span>
+    <span class="custom-alert-text"></span>
+  `;
+  const msg = typeof message === 'string' ? message : String(message ?? '');
+  alertEl.querySelector('.custom-alert-text').textContent = msg;
+  host.appendChild(alertEl);
+
+  requestAnimationFrame(() => alertEl.classList.add('show'));
+
+  const dismiss = () => {
+    alertEl.classList.remove('show');
+    alertEl.classList.add('hide');
+    setTimeout(() => {
+      if (host.contains(alertEl)) host.removeChild(alertEl);
+    }, 180);
+  };
+
+  setTimeout(dismiss, 2600);
+  alertEl.addEventListener('click', dismiss);
+}
+
+window.showCustomAlert = showCustomAlert;
+window.alert = (message) => showCustomAlert(message);
+
+const exportLibraryCache = {};
+
+async function loadRemoteModule(cacheKey, url) {
+  if (!exportLibraryCache[cacheKey]) {
+    exportLibraryCache[cacheKey] = import(url);
+  }
+  return exportLibraryCache[cacheKey];
+}
+
+function enableDraggableModals(root = document) {
+  if (!root) return;
+
+  const overlays = [];
+  if (root.matches && root.matches('.modal-overlay')) overlays.push(root);
+  if (root.querySelectorAll) overlays.push(...root.querySelectorAll('.modal-overlay'));
+
+  overlays.forEach((overlay) => {
+    if (!overlay || overlay.dataset.dragReady === 'true') return;
+    overlay.dataset.dragReady = 'true';
+
+    const modalCard = overlay.querySelector('.modal-card');
+    const modalHeader = modalCard?.querySelector('.modal-header');
+    if (!modalCard || !modalHeader) return;
+
+    modalCard.classList.add('draggable-modal-card');
+    modalHeader.classList.add('draggable-modal-header');
+
+    let isDragging = false;
+    let offsetX = 0;
+    let offsetY = 0;
+
+    const stopDrag = () => {
+      isDragging = false;
+      overlay.classList.remove('dragging');
+      document.body.classList.remove('modal-dragging');
+      document.removeEventListener('mousemove', onDrag);
+    };
+
+    const onDrag = (event) => {
+      if (!isDragging) return;
+      const overlayRect = overlay.getBoundingClientRect();
+      const cardWidth = modalCard.offsetWidth;
+      const cardHeight = modalCard.offsetHeight;
+      const maxLeft = Math.max(0, overlayRect.width - cardWidth);
+      const maxTop = Math.max(0, overlayRect.height - cardHeight);
+      const nextLeft = Math.max(0, Math.min(maxLeft, event.clientX - overlayRect.left - offsetX));
+      const nextTop = Math.max(0, Math.min(maxTop, event.clientY - overlayRect.top - offsetY));
+
+      modalCard.style.left = `${nextLeft}px`;
+      modalCard.style.top = `${nextTop}px`;
+    };
+
+    modalHeader.addEventListener('mousedown', (event) => {
+      if (event.button !== 0) return;
+      if (event.target.closest('button, input, textarea, select, a, [data-no-drag]')) return;
+
+      const overlayRect = overlay.getBoundingClientRect();
+      const cardRect = modalCard.getBoundingClientRect();
+
+      if (getComputedStyle(modalCard).position !== 'absolute') {
+        modalCard.style.position = 'absolute';
+        modalCard.style.margin = '0';
+        modalCard.style.width = `${cardRect.width}px`;
+        modalCard.style.left = `${cardRect.left - overlayRect.left}px`;
+        modalCard.style.top = `${cardRect.top - overlayRect.top}px`;
+      }
+
+      offsetX = event.clientX - modalCard.getBoundingClientRect().left;
+      offsetY = event.clientY - modalCard.getBoundingClientRect().top;
+      isDragging = true;
+      overlay.classList.add('dragging');
+      document.body.classList.add('modal-dragging');
+      document.addEventListener('mousemove', onDrag);
+      document.addEventListener('mouseup', stopDrag, { once: true });
+      event.preventDefault();
+    });
+  });
+}
+
 // --- EDITOR LOGIC ---
 
 function setupEditorListeners() {
@@ -1748,6 +1767,499 @@ function setupEditorListeners() {
   const aiTrigger = document.getElementById('aiTrigger');
   const aiInput = document.getElementById('aiInput');
   const aiSend = document.getElementById('aiSend');
+
+  // Sidebar button handlers
+  const sidebarBackBtn = document.getElementById('sidebarBackBtn');
+  const sidebarShareBtn = document.getElementById('sidebarShareBtn');
+  const sidebarCommentBtn = document.getElementById('sidebarCommentBtn');
+  const sidebarChatBtn = document.getElementById('sidebarChatBtn');
+  const sidebarDeployBtn = document.getElementById('sidebarDeployBtn');
+  const shareModalEl = document.getElementById('shareModal');
+  const deployModal = document.getElementById('deployModal');
+  const closeDeployModal = document.getElementById('closeDeployModal');
+  const copyDeployLinkBtn = document.getElementById('copyDeployLinkBtn');
+  const deployLinkInput = document.getElementById('deployLinkInput');
+  const deployStatusText = document.getElementById('deployStatusText');
+  const unpublishDocBtn = document.getElementById('unpublishDocBtn');
+  enableDraggableModals(app);
+
+  const getPublishedLink = () => `${window.location.origin}?doc=${currentDocId}`;
+
+  const openDeployModal = (justPublished = false) => {
+    const currentDoc = documents.find(d => d.id === currentDocId);
+    if (!currentDoc || !currentDoc.is_public || !deployModal) return;
+    if (deployLinkInput) deployLinkInput.value = getPublishedLink();
+    if (deployStatusText) {
+      deployStatusText.textContent = justPublished
+        ? 'Published successfully. Share this live link:'
+        : 'This document is already published. Share this live link:';
+    }
+    deployModal.style.display = 'flex';
+  };
+
+  if (sidebarBackBtn) {
+    sidebarBackBtn.addEventListener('click', () => {
+      renderDashboard();
+    });
+  }
+
+  if (sidebarShareBtn && shareModalEl) {
+    sidebarShareBtn.addEventListener('click', () => {
+      shareModalEl.style.display = 'flex';
+    });
+  }
+
+  if (sidebarCommentBtn) {
+    sidebarCommentBtn.addEventListener('click', () => {
+      const commentsSidebar = document.getElementById('commentsSidebar');
+      if (commentsSidebar) {
+        const isVisible = commentsSidebar.style.display !== 'none';
+        commentsSidebar.style.display = isVisible ? 'none' : 'flex';
+        sidebarCommentBtn.classList.toggle('active', !isVisible);
+      }
+    });
+  }
+
+  if (sidebarChatBtn) {
+    sidebarChatBtn.addEventListener('click', () => {
+      const chatWidget = document.getElementById('chatWidget');
+      if (chatWidget) {
+        const isVisible = chatWidget.style.display !== 'none';
+        chatWidget.style.display = isVisible ? 'none' : 'flex';
+        sidebarChatBtn.classList.toggle('active', !isVisible);
+      }
+    });
+  }
+
+  const closeCommentsBtn = document.getElementById('closeComments');
+  if (closeCommentsBtn) {
+    closeCommentsBtn.addEventListener('click', () => {
+      const commentsSidebar = document.getElementById('commentsSidebar');
+      if (commentsSidebar) commentsSidebar.style.display = 'none';
+      if (sidebarCommentBtn) sidebarCommentBtn.classList.remove('active');
+    });
+  }
+
+  const closeCollabChatBtn = document.getElementById('closeCollabChat');
+  if (closeCollabChatBtn) {
+    closeCollabChatBtn.addEventListener('click', () => {
+      const chatWidget = document.getElementById('chatWidget');
+      if (chatWidget) chatWidget.style.display = 'none';
+      if (sidebarChatBtn) sidebarChatBtn.classList.remove('active');
+    });
+  }
+
+  if (sidebarDeployBtn) {
+    sidebarDeployBtn.addEventListener('click', async () => {
+      const currentDoc = documents.find(d => d.id === currentDocId);
+      if (!currentDoc) return;
+
+      if (currentDoc.is_public) {
+        openDeployModal(false);
+        return;
+      }
+
+      sidebarDeployBtn.disabled = true;
+      const { error } = await updateDocument(currentDocId, { is_public: true });
+      sidebarDeployBtn.disabled = false;
+
+      if (error) {
+        alert('Failed to publish document');
+        return;
+      }
+
+      currentDoc.is_public = true;
+      sidebarDeployBtn.classList.add('active');
+      sidebarDeployBtn.title = 'Published';
+      openDeployModal(true);
+    });
+  }
+
+  if (closeDeployModal && deployModal) {
+    closeDeployModal.addEventListener('click', () => {
+      deployModal.style.display = 'none';
+    });
+  }
+
+  if (shareModalEl) {
+    shareModalEl.addEventListener('click', (event) => {
+      if (event.target === shareModalEl) shareModalEl.style.display = 'none';
+    });
+  }
+
+  if (deployModal) {
+    deployModal.addEventListener('click', (event) => {
+      if (event.target === deployModal) deployModal.style.display = 'none';
+    });
+  }
+
+  if (copyDeployLinkBtn && deployLinkInput) {
+    copyDeployLinkBtn.addEventListener('click', async () => {
+      const url = deployLinkInput.value.trim();
+      if (!url) return;
+      try {
+        await navigator.clipboard.writeText(url);
+        alert('Published link copied');
+      } catch (error) {
+        deployLinkInput.select();
+        document.execCommand('copy');
+        alert('Published link copied');
+      }
+    });
+  }
+
+  if (unpublishDocBtn && deployModal && sidebarDeployBtn) {
+    unpublishDocBtn.addEventListener('click', async () => {
+      const currentDoc = documents.find(d => d.id === currentDocId);
+      if (!currentDoc || !currentDoc.is_public) return;
+
+      unpublishDocBtn.disabled = true;
+      const { error } = await updateDocument(currentDocId, { is_public: false });
+      unpublishDocBtn.disabled = false;
+
+      if (error) {
+        alert('Failed to unpublish document');
+        return;
+      }
+
+      currentDoc.is_public = false;
+      sidebarDeployBtn.classList.remove('active');
+      sidebarDeployBtn.title = 'Deploy';
+      deployModal.style.display = 'none';
+      alert('Document unpublished');
+    });
+  }
+
+  // Toolbar download button - opens export modal
+  const exportBtn2 = document.getElementById('exportBtn2');
+  if (exportBtn2) {
+    exportBtn2.addEventListener('click', () => {
+      document.getElementById('exportModal').style.display = 'flex';
+    });
+  }
+
+  // Export modal handlers
+  const closeExportModal = document.getElementById('closeExportModal');
+  if (closeExportModal) {
+    closeExportModal.addEventListener('click', () => {
+      document.getElementById('exportModal').style.display = 'none';
+    });
+  }
+
+  // Export format selection
+  document.querySelectorAll('.export-option-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const format = btn.dataset.format;
+      downloadDocument(format);
+      document.getElementById('exportModal').style.display = 'none';
+    });
+  });
+
+  // Download function for different formats
+  async function downloadDocument(format) {
+    const doc = documents.find(d => d.id === currentDocId);
+    if (!doc) return;
+
+    const editor = document.getElementById('editor');
+    if (!editor) return;
+
+    const content = editor.innerHTML;
+    const textContent = editor.innerText;
+    const safeTitle = (doc.title || 'Untitled Document')
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim() || 'Untitled Document';
+
+    const buildExportHtml = () => `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${safeTitle}</title>
+  <style>
+    body { max-width: 800px; margin: 0 auto; padding: 2rem; font-family: Georgia, serif; line-height: 1.6; color: #1f2937; }
+    img { max-width: 100%; height: auto; }
+  </style>
+</head>
+<body>
+  ${content}
+</body>
+</html>`;
+    const toBlob = async (value, fallbackMime = 'application/octet-stream') => {
+      const resolved = await Promise.resolve(value);
+
+      if (resolved instanceof Blob) return resolved;
+      if (resolved instanceof ArrayBuffer) return new Blob([resolved], { type: fallbackMime });
+      if (ArrayBuffer.isView(resolved)) return new Blob([resolved], { type: fallbackMime });
+      if (typeof resolved === 'string' && resolved.startsWith('data:')) {
+        const response = await fetch(resolved);
+        return await response.blob();
+      }
+      if (typeof resolved === 'string') {
+        return new Blob([resolved], { type: fallbackMime });
+      }
+      if (resolved && typeof resolved === 'object' && resolved.buffer && ArrayBuffer.isView(resolved)) {
+        return new Blob([resolved], { type: fallbackMime });
+      }
+
+      throw new TypeError('Unsupported export payload type');
+    };
+
+    const triggerBlobDownload = async (payload, filename, mimeType = 'application/octet-stream') => {
+      const blob = await toBlob(payload, mimeType);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    };
+
+    const fallbackMarkdown = () => content
+      .replace(/<h1>(.*?)<\/h1>/gi, '# $1\n\n')
+      .replace(/<h2>(.*?)<\/h2>/gi, '## $1\n\n')
+      .replace(/<h3>(.*?)<\/h3>/gi, '### $1\n\n')
+      .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
+      .replace(/<b>(.*?)<\/b>/gi, '**$1**')
+      .replace(/<em>(.*?)<\/em>/gi, '*$1*')
+      .replace(/<i>(.*?)<\/i>/gi, '*$1*')
+      .replace(/<u>(.*?)<\/u>/gi, '<u>$1</u>')
+      .replace(/<li>(.*?)<\/li>/gi, '- $1\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+
+    const buildDocxBlob = async () => {
+      const docxModule = await loadRemoteModule('docx', 'https://esm.sh/docx@9.0.2');
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel } = docxModule;
+      if (!Document || !Packer || !Paragraph || !TextRun) {
+        throw new Error('DOCX package unavailable');
+      }
+
+      const parser = new DOMParser();
+      const parsed = parser.parseFromString(`<div>${content || ''}</div>`, 'text/html');
+      const root = parsed.body.firstElementChild || parsed.body;
+
+      const collectRuns = (node, style = {}) => {
+        if (!node) return [];
+        if (node.nodeType === Node.TEXT_NODE) {
+          const raw = (node.textContent || '').replace(/\s+/g, ' ');
+          if (!raw.trim()) return [];
+          return [new TextRun({
+            text: raw,
+            bold: !!style.bold,
+            italics: !!style.italics,
+            underline: style.underline ? {} : undefined
+          })];
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) return [];
+
+        const tag = node.tagName.toLowerCase();
+        const nextStyle = { ...style };
+        if (tag === 'strong' || tag === 'b') nextStyle.bold = true;
+        if (tag === 'em' || tag === 'i') nextStyle.italics = true;
+        if (tag === 'u') nextStyle.underline = true;
+
+        const runs = [];
+        node.childNodes.forEach((child) => {
+          runs.push(...collectRuns(child, nextStyle));
+        });
+        return runs;
+      };
+
+      const paragraphs = [];
+      const pushParagraph = (runs, options = {}) => {
+        if (!runs || runs.length === 0) return;
+        paragraphs.push(new Paragraph({ children: runs, ...options }));
+      };
+
+      root.childNodes.forEach((node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = (node.textContent || '').trim();
+          if (text) pushParagraph([new TextRun(text)]);
+          return;
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        const tag = node.tagName.toLowerCase();
+
+        if (tag === 'ul' || tag === 'ol') {
+          Array.from(node.children).forEach((li) => {
+            if (li.tagName?.toLowerCase() !== 'li') return;
+            const runs = collectRuns(li);
+            if (runs.length) {
+              paragraphs.push(new Paragraph({ children: runs, bullet: { level: 0 } }));
+            }
+          });
+          return;
+        }
+
+        if (tag === 'br') {
+          paragraphs.push(new Paragraph({ children: [new TextRun('')] }));
+          return;
+        }
+
+        const runs = collectRuns(node);
+        if (!runs.length) return;
+
+        if (tag === 'h1') {
+          pushParagraph(runs, { heading: HeadingLevel.HEADING_1 });
+          return;
+        }
+        if (tag === 'h2') {
+          pushParagraph(runs, { heading: HeadingLevel.HEADING_2 });
+          return;
+        }
+        if (tag === 'h3') {
+          pushParagraph(runs, { heading: HeadingLevel.HEADING_3 });
+          return;
+        }
+
+        pushParagraph(runs);
+      });
+
+      if (paragraphs.length === 0) {
+        paragraphs.push(new Paragraph({ children: [new TextRun(textContent || '')] }));
+      }
+
+      const docxDoc = new Document({
+        sections: [{
+          properties: {},
+          children: paragraphs
+        }]
+      });
+
+      return Packer.toBlob(docxDoc);
+    };
+
+    try {
+      let blob = null;
+      let filename = '';
+      let mimeType = 'application/octet-stream';
+
+      switch (format) {
+        case 'txt': {
+          mimeType = 'text/plain;charset=utf-8';
+          blob = new Blob([textContent], { type: mimeType });
+          filename = `${safeTitle}.txt`;
+          break;
+        }
+
+        case 'html': {
+          mimeType = 'text/html;charset=utf-8';
+          blob = new Blob([buildExportHtml()], { type: mimeType });
+          filename = `${safeTitle}.html`;
+          break;
+        }
+
+        case 'md': {
+          let markdown = '';
+          try {
+            const turndownModule = await loadRemoteModule('turndown', 'https://esm.sh/turndown@7.2.0');
+            const TurndownService = turndownModule.default || turndownModule.TurndownService;
+            if (!TurndownService) throw new Error('Turndown unavailable');
+            const turndownService = new TurndownService({
+              headingStyle: 'atx',
+              bulletListMarker: '-',
+              codeBlockStyle: 'fenced'
+            });
+            turndownService.addRule('underline', {
+              filter: ['u'],
+              replacement: (text) => `<u>${text}</u>`
+            });
+            markdown = turndownService.turndown(content || '');
+          } catch {
+            markdown = fallbackMarkdown();
+          }
+          mimeType = 'text/markdown;charset=utf-8';
+          blob = new Blob([markdown], { type: mimeType });
+          filename = `${safeTitle}.md`;
+          break;
+        }
+
+        case 'pdf': {
+          alert('Generating PDF...');
+          const [html2canvasModule, jsPdfModule] = await Promise.all([
+            loadRemoteModule('html2canvas', 'https://esm.sh/html2canvas@1.4.1'),
+            loadRemoteModule('jspdf', 'https://esm.sh/jspdf@2.5.1')
+          ]);
+
+          const html2canvas = html2canvasModule.default || html2canvasModule;
+          const jsPDF = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
+          if (!html2canvas || !jsPDF) throw new Error('PDF libraries failed to load');
+
+          const renderRoot = document.createElement('div');
+          renderRoot.style.position = 'fixed';
+          renderRoot.style.left = '-100000px';
+          renderRoot.style.top = '0';
+          renderRoot.style.width = '816px';
+          renderRoot.style.padding = '48px';
+          renderRoot.style.background = '#ffffff';
+          renderRoot.style.color = '#111827';
+          renderRoot.style.fontFamily = 'Georgia, serif';
+          renderRoot.style.lineHeight = '1.6';
+          renderRoot.innerHTML = content;
+          document.body.appendChild(renderRoot);
+
+          const canvas = await html2canvas(renderRoot, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff'
+          });
+          document.body.removeChild(renderRoot);
+
+          const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+          const pageWidth = pdf.internal.pageSize.getWidth();
+          const pageHeight = pdf.internal.pageSize.getHeight();
+          const imgData = canvas.toDataURL('image/png');
+          const imgWidth = pageWidth;
+          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+          let heightLeft = imgHeight;
+          let position = 0;
+
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+
+          while (heightLeft > 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+          }
+
+          pdf.save(`${safeTitle}.pdf`);
+          alert('PDF downloaded');
+          return;
+        }
+
+        case 'docx': {
+          alert('Generating DOCX...');
+          mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+          blob = await buildDocxBlob();
+          filename = `${safeTitle}.docx`;
+          break;
+        }
+
+        default:
+          alert('Unknown format');
+          return;
+      }
+
+      if (blob && filename) {
+        await triggerBlobDownload(blob, filename, mimeType);
+        alert(`${filename.split('.').pop().toUpperCase()} downloaded`);
+      }
+    } catch (error) {
+      console.error(`Export ${format} failed:`, error);
+      alert(`Failed to export ${format.toUpperCase()}`);
+    }
+  }
+
 
   // Model selectors
   const aiModelSelector = document.getElementById('aiModelSelector');
@@ -2039,7 +2551,7 @@ function setupEditorListeners() {
         - Do not wrap in UPDATE_DOCUMENT/APPEND_CONTENT/etc.`;
 
       try {
-        const selectedModel = proStyleModelSelector.value;
+        const selectedModel = proStyleModelSelector?.value || savedModel;
         const response = await generateContent(proStylePromptText, selectedModel);
         let html = response.trim();
 
@@ -2100,18 +2612,38 @@ function setupEditorListeners() {
     handleMarkdownShortcuts(editor, e);
   });
 
-  // Font Family
+  // Undo/Redo
+  const undoBtn = document.getElementById('undoBtn');
+  const redoBtn = document.getElementById('redoBtn');
+
+  if (undoBtn) {
+    undoBtn.addEventListener('click', () => {
+      document.execCommand('undo', false, null);
+    });
+  }
+
+  if (redoBtn) {
+    redoBtn.addEventListener('click', () => {
+      document.execCommand('redo', false, null);
+    });
+  }
+
+  // Font family & size
   const fontFamily = document.getElementById('fontFamily');
+  const fontSize = document.getElementById('fontSize');
+
   fontFamily.addEventListener('change', () => {
     document.execCommand('fontName', false, fontFamily.value);
-    editor.focus();
   });
 
-  // Font Size
-  const fontSize = document.getElementById('fontSize');
   fontSize.addEventListener('change', () => {
-    document.execCommand('fontSize', false, fontSize.value);
-    editor.focus();
+    const val = fontSize.value;
+    document.execCommand('fontSize', false, '7');
+    const fontElements = document.querySelectorAll('font[size="7"]');
+    fontElements.forEach(el => {
+      el.removeAttribute('size');
+      el.style.fontSize = val;
+    });
   });
 
   // Toolbar
@@ -2263,7 +2795,7 @@ function setupEditorListeners() {
               `;
 
     try {
-      const selectedModel = aiModelSelector.value;
+      const selectedModel = aiModelSelector?.value || savedModel;
       const response = await generateContent(prompt, selectedModel);
 
       let processedResponse = response;
@@ -2343,42 +2875,48 @@ function setupEditorListeners() {
   });
 
   // Feedback Logic
-  closeFeedback.addEventListener('click', () => {
-    feedbackModal.style.display = 'none';
-  });
-
-  feedbackModal.addEventListener('click', (e) => {
-    if (e.target === feedbackModal) {
+  if (closeFeedback && feedbackModal) {
+    closeFeedback.addEventListener('click', () => {
       feedbackModal.style.display = 'none';
-    }
-  });
+    });
+  }
 
-  feedbackForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = feedbackForm.querySelector('button[type="submit"]');
-    const originalText = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Sending...';
+  if (feedbackModal) {
+    feedbackModal.addEventListener('click', (e) => {
+      if (e.target === feedbackModal) {
+        feedbackModal.style.display = 'none';
+      }
+    });
+  }
 
-    const name = document.getElementById('fbName').value;
-    const email = document.getElementById('fbEmail').value;
-    const rating = document.querySelector('input[name="rating"]:checked')?.value;
-    const message = document.getElementById('fbMessage').value;
+  if (feedbackForm) {
+    feedbackForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = feedbackForm.querySelector('button[type="submit"]');
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Sending...';
 
-    const { error } = await submitFeedback(name, email, rating, message);
+      const name = document.getElementById('fbName').value;
+      const email = document.getElementById('fbEmail').value;
+      const rating = document.querySelector('input[name="rating"]:checked')?.value;
+      const message = document.getElementById('fbMessage').value;
 
-    if (error) {
-      alert('Failed to submit feedback. Please try again.');
-      console.error(error);
-    } else {
-      alert('Thank you for your feedback!');
-      feedbackModal.style.display = 'none';
-      feedbackForm.reset();
-    }
+      const { error } = await submitFeedback(name, email, rating, message);
 
-    btn.disabled = false;
-    btn.textContent = originalText;
-  });
+      if (error) {
+        alert('Failed to submit feedback. Please try again.');
+        console.error(error);
+      } else {
+        alert('Thank you for your feedback!');
+        if (feedbackModal) feedbackModal.style.display = 'none';
+        feedbackForm.reset();
+      }
+
+      btn.disabled = false;
+      btn.textContent = originalText;
+    });
+  }
 
   // Help Panel Logic
   const helpTrigger = document.getElementById('helpTrigger');
@@ -2387,14 +2925,6 @@ function setupEditorListeners() {
   const openAiChatBtn = document.getElementById('openAiChatBtn');
   const restartTutorialBtn = document.getElementById('restartTutorialBtn');
 
-  helpTrigger.addEventListener('click', () => {
-    helpPanel.style.display = helpPanel.style.display === 'none' ? 'block' : 'none';
-  });
-
-  closeHelp.addEventListener('click', () => {
-    helpPanel.style.display = 'none';
-  });
-
   // Help Chat Logic
   const helpChatPopup = document.getElementById('helpChatPopup');
   const closeHelpChat = document.getElementById('closeHelpChat');
@@ -2402,32 +2932,41 @@ function setupEditorListeners() {
   const helpChatSend = document.getElementById('helpChatSend');
   const helpChatMessages = document.getElementById('helpChatMessages');
 
-  function addHelpMessage(text, type) {
-    const div = document.createElement('div');
-    div.className = `ai-message ${type}`;
-    div.textContent = text;
-    helpChatMessages.appendChild(div);
-    helpChatMessages.scrollTop = helpChatMessages.scrollHeight;
-  }
+  if (helpTrigger && helpPanel && closeHelp && openAiChatBtn && restartTutorialBtn && helpChatPopup && closeHelpChat && helpChatInput && helpChatSend && helpChatMessages) {
+    helpTrigger.addEventListener('click', () => {
+      helpPanel.style.display = helpPanel.style.display === 'none' ? 'block' : 'none';
+    });
 
-  const handleHelpSend = async () => {
-    const text = helpChatInput.value.trim();
-    if (!text) return;
+    closeHelp.addEventListener('click', () => {
+      helpPanel.style.display = 'none';
+    });
 
-    addHelpMessage(text, 'user');
-    helpChatInput.value = '';
-    helpChatInput.disabled = true;
-    helpChatSend.disabled = true;
+    function addHelpMessage(text, type) {
+      const div = document.createElement('div');
+      div.className = `ai-message ${type}`;
+      div.textContent = text;
+      helpChatMessages.appendChild(div);
+      helpChatMessages.scrollTop = helpChatMessages.scrollHeight;
+    }
 
-    // Add loading indicator
-    const loadingDiv = document.createElement('div');
-    loadingDiv.className = 'ai-message ai';
-    loadingDiv.textContent = 'Thinking...';
-    helpChatMessages.appendChild(loadingDiv);
-    helpChatMessages.scrollTop = helpChatMessages.scrollHeight;
+    const handleHelpSend = async () => {
+      const text = helpChatInput.value.trim();
+      if (!text) return;
 
-    try {
-      const systemPrompt = `You are a helpful assistant for the ProEdit document editor.
+      addHelpMessage(text, 'user');
+      helpChatInput.value = '';
+      helpChatInput.disabled = true;
+      helpChatSend.disabled = true;
+
+      // Add loading indicator
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'ai-message ai';
+      loadingDiv.textContent = 'Thinking...';
+      helpChatMessages.appendChild(loadingDiv);
+      helpChatMessages.scrollTop = helpChatMessages.scrollHeight;
+
+      try {
+        const systemPrompt = `You are a helpful assistant for the ProEdit document editor.
                       Your goal is to help users understand how to use the application.
 
                       Key Features of ProEdit:
@@ -2440,58 +2979,59 @@ function setupEditorListeners() {
                       Answer the user's question about how to use these features. Keep answers concise and helpful.
                       Do not try to edit the document content directly. Just explain how to do it.`;
 
-      const prompt = `${systemPrompt}\n\nUser Question: ${text}`;
-      const response = await generateContent(prompt);
+        const prompt = `${systemPrompt}\n\nUser Question: ${text}`;
+        const response = await generateContent(prompt);
 
-      loadingDiv.remove();
-      addHelpMessage(response, 'ai');
-    } catch (error) {
-      console.error('Help Chat Error:', error);
-      loadingDiv.remove();
-      addHelpMessage('Sorry, I encountered an error. Please try again.', 'ai');
-    } finally {
-      helpChatInput.disabled = false;
-      helpChatSend.disabled = false;
-      helpChatInput.focus();
-    }
-  };
+        loadingDiv.remove();
+        addHelpMessage(response, 'ai');
+      } catch (error) {
+        console.error('Help Chat Error:', error);
+        loadingDiv.remove();
+        addHelpMessage('Sorry, I encountered an error. Please try again.', 'ai');
+      } finally {
+        helpChatInput.disabled = false;
+        helpChatSend.disabled = false;
+        helpChatInput.focus();
+      }
+    };
 
-  helpChatSend.addEventListener('click', handleHelpSend);
-  helpChatInput.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleHelpSend();
-  });
+    helpChatSend.addEventListener('click', handleHelpSend);
+    helpChatInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') handleHelpSend();
+    });
 
-  closeHelpChat.addEventListener('click', () => {
-    helpChatPopup.classList.remove('visible');
-    setTimeout(() => {
-      helpChatPopup.style.display = 'none';
-    }, 300);
-  });
+    closeHelpChat.addEventListener('click', () => {
+      helpChatPopup.classList.remove('visible');
+      setTimeout(() => {
+        helpChatPopup.style.display = 'none';
+      }, 300);
+    });
 
-  // Update Open AI Chat button to open Help Chat instead
-  openAiChatBtn.addEventListener('click', () => {
-    helpPanel.style.display = 'none';
-    helpChatPopup.style.display = 'flex';
-    // Small delay to allow display:flex to apply before adding visible class for animation
-    setTimeout(() => {
-      helpChatPopup.classList.add('visible');
-      helpChatInput.focus();
-    }, 10);
-  });
-
-  restartTutorialBtn.addEventListener('click', () => {
-    helpPanel.style.display = 'none';
-    localStorage.removeItem('proedit_tutorial_completed');
-    currentTutorialStep = 0;
-    startTutorial();
-  });
-
-  // Close help panel when clicking outside
-  document.addEventListener('click', (e) => {
-    if (!helpPanel.contains(e.target) && !helpTrigger.contains(e.target)) {
+    // Update Open AI Chat button to open Help Chat instead
+    openAiChatBtn.addEventListener('click', () => {
       helpPanel.style.display = 'none';
-    }
-  });
+      helpChatPopup.style.display = 'flex';
+      // Small delay to allow display:flex to apply before adding visible class for animation
+      setTimeout(() => {
+        helpChatPopup.classList.add('visible');
+        helpChatInput.focus();
+      }, 10);
+    });
+
+    restartTutorialBtn.addEventListener('click', () => {
+      helpPanel.style.display = 'none';
+      localStorage.removeItem('proedit_tutorial_completed');
+      currentTutorialStep = 0;
+      startTutorial();
+    });
+
+    // Close help panel when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!helpPanel.contains(e.target) && !helpTrigger.contains(e.target)) {
+        helpPanel.style.display = 'none';
+      }
+    });
+  }
 
   // --- TEXT SELECTION EDIT POPUP ---
   const textEditPopup = document.getElementById('textEditPopup');
@@ -2653,7 +3193,7 @@ function setupEditorListeners() {
 
   // --- COLLABORATION LISTENERS ---
   const shareBtn = document.getElementById('shareBtn');
-  const shareModal = document.getElementById('shareModal');
+  const shareModalCollab = document.getElementById('shareModal');
   const sendInviteBtn = document.getElementById('sendInviteBtn');
   const chatToggleBtn = document.getElementById('chatToggleBtn');
   const chatWidget = document.getElementById('chatWidget');
@@ -2663,7 +3203,7 @@ function setupEditorListeners() {
   // Share Modal
   if (shareBtn) {
     shareBtn.addEventListener('click', () => {
-      shareModal.style.display = 'flex';
+      shareModalCollab.style.display = 'flex';
       updateAvatars(collabUsers);
     });
   }
@@ -2762,11 +3302,14 @@ function setupEditorListeners() {
       if (!editor.contains(range.commonAncestorContainer) && range.commonAncestorContainer !== editor) return;
 
       const rect = range.getBoundingClientRect();
-      const editorScroll = document.getElementById('editorScroll');
+      const editorScroll = document.getElementById('editorScroll') || document.querySelector('.editor-area');
+      if (!editorScroll) return;
       const wrapperRect = editorScroll.getBoundingClientRect();
+      const scrollTop = editorScroll.scrollTop || 0;
+      const scrollLeft = editorScroll.scrollLeft || 0;
 
-      const relTop = rect.top - wrapperRect.top + editorScroll.scrollTop;
-      const relLeft = rect.left - wrapperRect.left + editorScroll.scrollLeft;
+      const relTop = rect.top - wrapperRect.top + scrollTop;
+      const relLeft = rect.left - wrapperRect.left + scrollLeft;
 
       collaborationManager.sendCursor({
         start: 0,
