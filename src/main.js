@@ -21,6 +21,9 @@ let activeCommentId = null;
 let commentHighlightRaf = null;
 let commentHighlightObserver = null;
 let commentHighlightResizeHandler = null;
+let slashTriggerRange = null;
+let globalLoadingDepth = 0;
+let globalLoaderEl = null;
 
 // DOM Elements
 const app = document.querySelector('#app');
@@ -473,62 +476,64 @@ async function handleResetPasswordRoute() {
 
 
 async function init() {
-  if (isResetPasswordRoute()) {
-    await handleResetPasswordRoute();
-    return;
-  }
-
-  const { data: { session } } = await supabase.auth.getSession();
-  user = session?.user;
-
-  // Check remember me preference
-  if (user && sessionStorage.getItem('proedit_remember_me') === 'false') {
-    // User didn't check remember me and came back, sign them out
-    await signOut();
-    user = null;
-  }
-
-  // Check URL for doc ID
-  const urlParams = new URLSearchParams(window.location.search);
-  const docId = urlParams.get('doc');
-
-  if (user) {
-    await migrateLocalDocsToSupabase();
-    await loadDocs();
-
-    // Check if we should open a specific doc
-    if (docId) {
-      const targetDoc = documents.find(d => d.id === docId);
-      if (targetDoc) {
-        currentDocId = docId;
-        renderEditor();
-        return; // Skip dashboard render
-      }
+  await withGlobalLoading('Loading your workspace...', async () => {
+    if (isResetPasswordRoute()) {
+      await handleResetPasswordRoute();
+      return;
     }
 
-    // Check if tutorial should be shown
-    const tutorialCompleted = localStorage.getItem('proedit_tutorial_completed');
-    if (!tutorialCompleted) {
-      renderDashboard();
-      setTimeout(() => startTutorial(), 500);
-    } else {
-      renderDashboard();
-    }
-  } else if (docId) {
-    // Not logged in but doc param exists -> try public doc
-    await loadPublicDocument(docId);
-  } else {
-    renderLanding();
-  }
-
-  supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { session } } = await supabase.auth.getSession();
     user = session?.user;
+
+    // Check remember me preference
+    if (user && sessionStorage.getItem('proedit_remember_me') === 'false') {
+      // User didn't check remember me and came back, sign them out
+      await signOut();
+      user = null;
+    }
+
+    // Check URL for doc ID
+    const urlParams = new URLSearchParams(window.location.search);
+    const docId = urlParams.get('doc');
+
     if (user) {
-      loadDocs();
-      renderDashboard();
+      await migrateLocalDocsToSupabase();
+      await loadDocs();
+
+      // Check if we should open a specific doc
+      if (docId) {
+        const targetDoc = documents.find(d => d.id === docId);
+        if (targetDoc) {
+          currentDocId = docId;
+          renderEditor();
+          return; // Skip dashboard render
+        }
+      }
+
+      // Check if tutorial should be shown
+      const tutorialCompleted = localStorage.getItem('proedit_tutorial_completed');
+      if (!tutorialCompleted) {
+        renderDashboard();
+        setTimeout(() => startTutorial(), 500);
+      } else {
+        renderDashboard();
+      }
+    } else if (docId) {
+      // Not logged in but doc param exists -> try public doc
+      await loadPublicDocument(docId);
     } else {
       renderLanding();
     }
+
+    supabase.auth.onAuthStateChange((_event, session) => {
+      user = session?.user;
+      if (user) {
+        loadDocs();
+        renderDashboard();
+      } else {
+        renderLanding();
+      }
+    });
   });
 }
 
@@ -1331,17 +1336,19 @@ function renderDashboard() {
         const layout = layouts[index];
         modal.remove();
 
-        await window.createNewDoc();
-        // The doc is now created and opened (currentDocId is set)
-        if (currentDocId) {
-          const doc = documents.find(d => d.id === currentDocId);
-          if (doc) {
-            doc.content = layout.content;
-            doc.title = layout.title || 'Untitled Document';
-            await updateCurrentDoc({ content: layout.content, title: doc.title });
-            renderEditor(); // Re-render with new content
+        await withGlobalLoading('Applying layout...', async () => {
+          await window.createNewDoc();
+          // The doc is now created and opened (currentDocId is set)
+          if (currentDocId) {
+            const doc = documents.find(d => d.id === currentDocId);
+            if (doc) {
+              doc.content = layout.content;
+              doc.title = layout.title || 'Untitled Document';
+              await updateCurrentDoc({ content: layout.content, title: doc.title });
+              renderEditor(); // Re-render with new content
+            }
           }
-        }
+        });
       });
     });
   }
@@ -1371,13 +1378,14 @@ function renderDashboard() {
         if (!prompt) return;
 
         const btn = document.getElementById('aiDocBtn');
-        const originalIcon = btn.innerHTML;
-        btn.innerHTML = '<i class="iconoir-activity icon-spin"></i>';
+        if (!btn) return;
+        setButtonLoading(btn, true, '');
         input.disabled = true;
 
         try {
-          // Use generateLayouts from api/gemini.js
-          const layouts = await generateLayouts(prompt);
+          const layouts = await withGlobalLoading('Generating AI layouts...', async () => (
+            generateLayouts(prompt)
+          ));
 
           if (layouts && layouts.length > 0) {
             showLayoutSelection(layouts);
@@ -1389,7 +1397,7 @@ function renderDashboard() {
           console.error(e);
           alert('Error: ' + e.message);
         } finally {
-          btn.innerHTML = originalIcon;
+          setButtonLoading(btn, false);
           input.disabled = false;
           input.focus();
         }
@@ -2026,32 +2034,45 @@ async function renderEditor() {
 // --- ACTIONS ---
 
 async function createNewDoc() {
-  const newDoc = {
-    id: Date.now().toString(),
-    user_id: user.id,
-    title: 'Untitled Document',
-    content: '',
-    is_public: false
-  };
-  const { data, error } = await createDocument(newDoc);
-  if (error) {
-    console.error('Error creating document:', error);
-    alert('Failed to create document');
-    return;
-  }
-  documents.unshift(data);
-  openDoc(data.id);
+  await withGlobalLoading('Creating a new document...', async () => {
+    const newDoc = {
+      id: Date.now().toString(),
+      user_id: user.id,
+      title: 'Untitled Document',
+      content: '',
+      is_public: false
+    };
+    const { data, error } = await createDocument(newDoc);
+    if (error) {
+      console.error('Error creating document:', error);
+      alert('Failed to create document');
+      return;
+    }
+    documents.unshift(data);
+    await openDoc(data.id, { showLoader: false });
+  });
 }
 
 // Expose to window for onclick handlers
 window.createNewDoc = createNewDoc;
 
-function openDoc(id) {
-  currentDocId = id;
-  // Update URL without reloading
-  const newUrl = `${window.location.origin}?doc=${id}`;
-  window.history.pushState({ path: newUrl }, '', newUrl);
-  renderEditor();
+async function openDoc(id, options = {}) {
+  const { showLoader = true } = options;
+  const runOpen = async () => {
+    currentDocId = id;
+    // Update URL without reloading
+    const newUrl = `${window.location.origin}?doc=${id}`;
+    window.history.pushState({ path: newUrl }, '', newUrl);
+    renderEditor();
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  };
+
+  if (showLoader) {
+    await withGlobalLoading('Opening document...', runOpen);
+    return;
+  }
+
+  await runOpen();
 }
 
 function closeDoc() {
@@ -2258,6 +2279,102 @@ function showCustomAlert(message, type = 'info') {
 
 window.showCustomAlert = showCustomAlert;
 window.alert = (message) => showCustomAlert(message);
+
+function ensureGlobalLoader() {
+  if (globalLoaderEl && document.body.contains(globalLoaderEl)) return globalLoaderEl;
+
+  globalLoaderEl = document.createElement('div');
+  globalLoaderEl.className = 'global-loader-overlay';
+  globalLoaderEl.innerHTML = `
+    <div class="global-loader-card">
+      <span class="global-loader-spinner" aria-hidden="true"></span>
+      <div class="global-loader-message">Loading...</div>
+    </div>
+  `;
+  document.body.appendChild(globalLoaderEl);
+  return globalLoaderEl;
+}
+
+function setGlobalLoading(isLoading, message = 'Loading...') {
+  const loader = ensureGlobalLoader();
+  const messageEl = loader.querySelector('.global-loader-message');
+  if (messageEl && message) messageEl.textContent = message;
+
+  if (isLoading) {
+    globalLoadingDepth += 1;
+    loader.classList.add('visible');
+    return;
+  }
+
+  globalLoadingDepth = Math.max(0, globalLoadingDepth - 1);
+  if (globalLoadingDepth === 0) {
+    loader.classList.remove('visible');
+  }
+}
+
+async function withGlobalLoading(message, task) {
+  setGlobalLoading(true, message);
+  try {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    return await task();
+  } finally {
+    setGlobalLoading(false);
+  }
+}
+
+function setButtonLoading(button, isLoading, label = 'Working...') {
+  if (!button) return;
+
+  if (isLoading) {
+    if (!button.dataset.loadingOriginalHtml) {
+      button.dataset.loadingOriginalHtml = button.innerHTML;
+    }
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    button.classList.add('btn-loading');
+    const labelMarkup = label ? `<span>${label}</span>` : '';
+    button.innerHTML = `
+      <span class="loading-inline">
+        <span class="loading-spinner"></span>
+        ${labelMarkup}
+      </span>
+    `;
+    return;
+  }
+
+  if (button.dataset.loadingOriginalHtml) {
+    button.innerHTML = button.dataset.loadingOriginalHtml;
+    delete button.dataset.loadingOriginalHtml;
+  }
+  button.disabled = false;
+  button.removeAttribute('aria-busy');
+  button.classList.remove('btn-loading');
+}
+
+function addAiLoadingMessage(text = 'Thinking') {
+  const msgs = document.getElementById('aiMessages');
+  if (!msgs) return () => { };
+
+  const div = document.createElement('div');
+  div.className = 'ai-message ai loading';
+
+  const label = document.createElement('span');
+  label.className = 'ai-loading-label';
+  label.textContent = text;
+
+  const dots = document.createElement('span');
+  dots.className = 'loading-dots';
+  dots.innerHTML = '<span></span><span></span><span></span>';
+
+  div.appendChild(label);
+  div.appendChild(dots);
+  msgs.appendChild(div);
+  msgs.scrollTop = msgs.scrollHeight;
+
+  return () => {
+    if (div.parentNode) div.parentNode.removeChild(div);
+  };
+}
 
 const exportLibraryCache = {};
 
@@ -3264,6 +3381,7 @@ function setupEditorListeners() {
       const popup = document.getElementById('aiPopup');
       if (popup) {
         popup.style.display = 'flex';
+        popup.classList.add('visible');
         const aiInput = document.getElementById('aiInput');
         if (aiInput) {
           aiInput.focus();
@@ -3330,6 +3448,7 @@ function setupEditorListeners() {
     closeAi.addEventListener('click', (e) => {
       e.stopPropagation(); // Stop event bubbling
       aiPopup.style.display = 'none';
+      aiPopup.classList.remove('visible');
       aiPopup.classList.remove('split-view');
       document.querySelector('.editor-layout').classList.remove('has-sidebar');
       // Reset position
@@ -3354,6 +3473,7 @@ function setupEditorListeners() {
     addAiMessage(text, 'user');
     aiInput.value = '';
     aiSend.disabled = true;
+    const clearLoading = addAiLoadingMessage('Thinking');
 
     // Prepare context
     const docContent = editor.innerHTML;
@@ -3378,7 +3498,9 @@ function setupEditorListeners() {
               - Font Size: <span style="font-size: 18px">...</span>
               - Colors: <span style="color: red">...</span>
 
-              4. If you are just chatting, do not use the tags.
+              4. If you are just chatting, do not use the edit tags.
+              5. If you need clarification before editing, ask one question using:
+              <ASK_USER>{"question":"...","type":"buttons|input|select","options":["..."],"allowCustom":true}</ASK_USER>
               `;
 
     try {
@@ -3392,10 +3514,15 @@ function setupEditorListeners() {
       const updateMatch = response.match(/<UPDATE_DOCUMENT>([\s\S]*?)<\/UPDATE_DOCUMENT>/);
       if (updateMatch) {
         const newContent = updateMatch[1];
-        editor.innerHTML = newContent;
-        updateCurrentDoc({ content: newContent });
-        processedResponse = processedResponse.replace(/<UPDATE_DOCUMENT>[\s\S]*?<\/UPDATE_DOCUMENT>/, "I've replaced the document content.");
-        docUpdated = true;
+        const shouldApplyFullUpdate = confirm('AI wants to replace the entire document content. Apply this change?');
+        if (shouldApplyFullUpdate) {
+          editor.innerHTML = newContent;
+          updateCurrentDoc({ content: newContent });
+          processedResponse = processedResponse.replace(/<UPDATE_DOCUMENT>[\s\S]*?<\/UPDATE_DOCUMENT>/, "I've replaced the document content.");
+          docUpdated = true;
+        } else {
+          processedResponse = processedResponse.replace(/<UPDATE_DOCUMENT>[\s\S]*?<\/UPDATE_DOCUMENT>/, "I drafted a full-document rewrite, but did not apply it.");
+        }
       }
 
       // 2. Handle Append
@@ -3410,21 +3537,45 @@ function setupEditorListeners() {
 
       // 3. Handle Replace (Multiple occurrences)
       const replaceRegex = /<REPLACE_TEXT target="([^"]+)">([\s\S]*?)<\/REPLACE_TEXT>/g;
+      const replaceOperations = [];
+      let replacementApplied = false;
       let match;
       while ((match = replaceRegex.exec(response)) !== null) {
-        const target = match[1];
-        const replacement = match[2];
+        replaceOperations.push({
+          target: match[1],
+          replacement: match[2]
+        });
+      }
 
-        // Simple string replace (first occurrence)
-        if (editor.innerHTML.includes(target)) {
-          editor.innerHTML = editor.innerHTML.replace(target, replacement);
-          updateCurrentDoc({ content: editor.innerHTML });
-          docUpdated = true;
+      if (replaceOperations.length > 0) {
+        const replaceLabel = replaceOperations.length === 1
+          ? 'AI wants to replace one section in the document. Apply this change?'
+          : `AI wants to replace ${replaceOperations.length} sections in the document. Apply these changes?`;
+        const shouldApplyReplacements = confirm(replaceLabel);
+
+        if (shouldApplyReplacements) {
+          let replacedAny = false;
+          replaceOperations.forEach(({ target, replacement }) => {
+            if (editor.innerHTML.includes(target)) {
+              editor.innerHTML = editor.innerHTML.replace(target, replacement);
+              replacedAny = true;
+            }
+          });
+          if (replacedAny) {
+            updateCurrentDoc({ content: editor.innerHTML });
+            docUpdated = true;
+            replacementApplied = true;
+          }
         }
       }
 
       // Clean up replace tags from chat response
-      processedResponse = processedResponse.replace(/<REPLACE_TEXT[\s\S]*?<\/REPLACE_TEXT>/g, "I've updated that section.");
+      const replaceSummary = replaceOperations.length > 0
+        ? (replacementApplied
+          ? "I've updated that section."
+          : "I suggested replacement edits, but did not apply them.")
+        : "I've updated that section.";
+      processedResponse = processedResponse.replace(/<REPLACE_TEXT[\s\S]*?<\/REPLACE_TEXT>/g, replaceSummary);
 
       addAiMessage(processedResponse);
 
@@ -3432,6 +3583,7 @@ function setupEditorListeners() {
       addAiMessage("Sorry, I encountered an error. Please try again.");
       console.error(err);
     } finally {
+      clearLoading();
       aiSend.disabled = false;
       aiInput.focus();
     }
@@ -3547,8 +3699,11 @@ function setupEditorListeners() {
 
       // Add loading indicator
       const loadingDiv = document.createElement('div');
-      loadingDiv.className = 'ai-message ai';
-      loadingDiv.textContent = 'Thinking...';
+      loadingDiv.className = 'ai-message ai loading';
+      loadingDiv.innerHTML = `
+        <span class="ai-loading-label">Thinking</span>
+        <span class="loading-dots"><span></span><span></span><span></span></span>
+      `;
       helpChatMessages.appendChild(loadingDiv);
       helpChatMessages.scrollTop = helpChatMessages.scrollHeight;
 
@@ -4050,6 +4205,235 @@ function setupBetaBar() {
   });
 }
 
+function normalizeAiQuestionConfig(rawConfig = {}) {
+  const config = typeof rawConfig === 'string' ? { question: rawConfig } : (rawConfig || {});
+  const question = String(config.question || config.prompt || '').trim() || 'Could you clarify what you want?';
+
+  let type = String(config.type || 'input').trim().toLowerCase();
+  if (!['buttons', 'input', 'select'].includes(type)) type = 'input';
+
+  let options = [];
+  if (Array.isArray(config.options)) {
+    options = config.options
+      .map((option) => String(option ?? '').trim())
+      .filter(Boolean);
+  }
+  options = Array.from(new Set(options)).slice(0, 8);
+
+  if ((type === 'buttons' || type === 'select') && options.length === 0) {
+    options = ['Yes', 'No'];
+  }
+
+  return {
+    question,
+    type,
+    options,
+    allowCustom: config.allowCustom !== false,
+    placeholder: String(config.placeholder || '').trim() || 'Type your answer...',
+    submitLabel: String(config.submitLabel || '').trim() || 'Send'
+  };
+}
+
+function parseAiQuestionTags(rawText = '') {
+  const questions = [];
+  const cleanedText = String(rawText ?? '').replace(/<ASK_USER>([\s\S]*?)<\/ASK_USER>/gi, (_match, payload) => {
+    const body = String(payload ?? '').trim();
+    if (!body) return '';
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      parsed = { question: body, type: 'input' };
+    }
+
+    const normalized = normalizeAiQuestionConfig(parsed);
+    if (normalized.question) questions.push(normalized);
+    return '';
+  });
+
+  return {
+    cleanText: cleanedText.trim(),
+    questions
+  };
+}
+
+function submitAiQuestionReply(question, answer) {
+  const aiInput = document.getElementById('aiInput');
+  const aiSend = document.getElementById('aiSend');
+  if (!aiInput || !aiSend) return;
+
+  const safeQuestion = String(question || '').trim();
+  const safeAnswer = String(answer || '').trim();
+  if (!safeAnswer) return;
+
+  aiInput.value = safeQuestion
+    ? `Answer to your question "${safeQuestion}": ${safeAnswer}`
+    : safeAnswer;
+  aiInput.dispatchEvent(new Event('input', { bubbles: true }));
+  aiSend.click();
+}
+
+function addAiQuestionMessage(rawConfig = {}) {
+  const msgs = document.getElementById('aiMessages');
+  if (!msgs) return;
+
+  const config = normalizeAiQuestionConfig(rawConfig);
+  const bubble = document.createElement('div');
+  bubble.className = 'ai-message ai ai-question';
+
+  const question = document.createElement('div');
+  question.className = 'ai-question-text';
+  question.textContent = config.question;
+  bubble.appendChild(question);
+
+  const controls = document.createElement('div');
+  controls.className = 'ai-question-controls';
+  bubble.appendChild(controls);
+
+  const markAnswered = (answer) => {
+    const value = String(answer || '').trim();
+    if (!value || bubble.dataset.answered === 'true') return;
+
+    bubble.dataset.answered = 'true';
+    bubble.classList.add('answered');
+    bubble.querySelectorAll('button, input, select').forEach((el) => {
+      el.disabled = true;
+    });
+
+    const note = document.createElement('div');
+    note.className = 'ai-question-note';
+    note.textContent = `You replied: ${value}`;
+    bubble.appendChild(note);
+
+    submitAiQuestionReply(config.question, value);
+  };
+
+  if (config.type === 'buttons') {
+    const row = document.createElement('div');
+    row.className = 'ai-question-button-row';
+    config.options.forEach((option) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ai-question-btn';
+      btn.textContent = option;
+      btn.addEventListener('click', () => markAnswered(option));
+      row.appendChild(btn);
+    });
+    controls.appendChild(row);
+
+    if (config.allowCustom) {
+      const customWrap = document.createElement('div');
+      customWrap.className = 'ai-question-custom';
+      customWrap.style.display = 'none';
+
+      const customInput = document.createElement('input');
+      customInput.type = 'text';
+      customInput.className = 'ai-question-input';
+      customInput.placeholder = config.placeholder;
+
+      const customSubmit = document.createElement('button');
+      customSubmit.type = 'button';
+      customSubmit.className = 'ai-question-submit';
+      customSubmit.textContent = config.submitLabel;
+      customSubmit.addEventListener('click', () => markAnswered(customInput.value));
+      customInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          markAnswered(customInput.value);
+        }
+      });
+
+      customWrap.appendChild(customInput);
+      customWrap.appendChild(customSubmit);
+      controls.appendChild(customWrap);
+
+      const customToggle = document.createElement('button');
+      customToggle.type = 'button';
+      customToggle.className = 'ai-question-ghost';
+      customToggle.textContent = 'Custom...';
+      customToggle.addEventListener('click', () => {
+        customWrap.style.display = 'flex';
+        customInput.focus();
+      });
+      controls.appendChild(customToggle);
+    }
+  } else if (config.type === 'select') {
+    const select = document.createElement('select');
+    select.className = 'ai-question-select';
+    config.options.forEach((option) => {
+      const optionEl = document.createElement('option');
+      optionEl.value = option;
+      optionEl.textContent = option;
+      select.appendChild(optionEl);
+    });
+    if (config.allowCustom) {
+      const customOption = document.createElement('option');
+      customOption.value = '__custom__';
+      customOption.textContent = 'Custom...';
+      select.appendChild(customOption);
+    }
+
+    const customInput = document.createElement('input');
+    customInput.type = 'text';
+    customInput.className = 'ai-question-input';
+    customInput.placeholder = config.placeholder;
+    customInput.style.display = 'none';
+
+    const submit = document.createElement('button');
+    submit.type = 'button';
+    submit.className = 'ai-question-submit';
+    submit.textContent = config.submitLabel;
+    submit.addEventListener('click', () => {
+      const value = select.value === '__custom__' ? customInput.value : select.value;
+      markAnswered(value);
+    });
+
+    select.addEventListener('change', () => {
+      if (select.value === '__custom__') {
+        customInput.style.display = 'block';
+        customInput.focus();
+      } else {
+        customInput.style.display = 'none';
+      }
+    });
+
+    customInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        markAnswered(customInput.value);
+      }
+    });
+
+    controls.appendChild(select);
+    controls.appendChild(customInput);
+    controls.appendChild(submit);
+  } else {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'ai-question-input';
+    input.placeholder = config.placeholder;
+
+    const submit = document.createElement('button');
+    submit.type = 'button';
+    submit.className = 'ai-question-submit';
+    submit.textContent = config.submitLabel;
+    submit.addEventListener('click', () => markAnswered(input.value));
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        markAnswered(input.value);
+      }
+    });
+
+    controls.appendChild(input);
+    controls.appendChild(submit);
+  }
+
+  msgs.appendChild(bubble);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
 function addAiMessage(text, sender = 'ai') {
   // Backward compatible signature: addAiMessage(text, sender, {persist})
   const options = arguments.length >= 3 && typeof arguments[2] === 'object' ? arguments[2] : {};
@@ -4066,19 +4450,32 @@ function addAiMessage(text, sender = 'ai') {
     }
   }
 
+  let textForMessage = safeText;
+  let questions = [];
+  if (sender === 'ai') {
+    const parsed = parseAiQuestionTags(safeText);
+    textForMessage = parsed.cleanText;
+    questions = parsed.questions;
+  }
+
   const msgs = document.getElementById('aiMessages');
   if (!msgs) return;
-  const div = document.createElement('div');
-  div.className = `ai-message ${sender}`;
 
-  // Format markdown-ish
-  const formatted = safeText
-    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
-    .replace(/\*(.*?)\*/g, '<i>$1</i>')
-    .replace(/\n/g, '<br>');
+  if (textForMessage) {
+    const div = document.createElement('div');
+    div.className = `ai-message ${sender}`;
 
-  div.innerHTML = formatted;
-  msgs.appendChild(div);
+    // Format markdown-ish
+    const formatted = textForMessage
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\*(.*?)\*/g, '<i>$1</i>')
+      .replace(/\n/g, '<br>');
+
+    div.innerHTML = formatted;
+    msgs.appendChild(div);
+  }
+
+  questions.forEach((questionConfig) => addAiQuestionMessage(questionConfig));
   msgs.scrollTop = msgs.scrollHeight;
 }
 
@@ -4285,10 +4682,19 @@ function checkForSlash(el) {
   const text = range.startContainer.textContent;
   const cursor = range.startOffset;
 
-  if (text.slice(cursor - 1, cursor) === '/') {
+  if (text?.slice(cursor - 1, cursor) === '/') {
+    if (range.startContainer?.nodeType === Node.TEXT_NODE && cursor > 0) {
+      const trigger = document.createRange();
+      trigger.setStart(range.startContainer, cursor - 1);
+      trigger.setEnd(range.startContainer, cursor);
+      slashTriggerRange = trigger;
+    } else {
+      slashTriggerRange = null;
+    }
     const rect = range.getBoundingClientRect();
     showSlashMenu(rect);
   } else {
+    slashTriggerRange = null;
     hideSlashMenu();
   }
 }
@@ -4304,20 +4710,68 @@ function hideSlashMenu() {
   document.getElementById('slashMenu').classList.remove('visible');
 }
 
+function removeSlashTriggerCharacter() {
+  if (slashTriggerRange) {
+    try {
+      const trigger = slashTriggerRange.cloneRange();
+      if (trigger.toString() === '/') {
+        trigger.deleteContents();
+        slashTriggerRange = null;
+        return;
+      }
+    } catch (error) {
+      console.debug('Failed to remove slash trigger range:', error);
+    }
+  }
+
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount > 0) {
+    const cursorRange = selection.getRangeAt(0);
+    const node = cursorRange.startContainer;
+    const offset = cursorRange.startOffset;
+
+    if (node?.nodeType === Node.TEXT_NODE && offset > 0 && node.textContent?.slice(offset - 1, offset) === '/') {
+      const removalRange = document.createRange();
+      removalRange.setStart(node, offset - 1);
+      removalRange.setEnd(node, offset);
+      removalRange.deleteContents();
+      selection.removeAllRanges();
+      selection.addRange(removalRange);
+      slashTriggerRange = null;
+      return;
+    }
+  }
+
+  document.execCommand('delete', false, null);
+  slashTriggerRange = null;
+}
+
 async function triggerSlashAction(action) {
+  removeSlashTriggerCharacter();
   hideSlashMenu();
-  document.execCommand('delete', false, null); // Remove slash
 
   const editor = document.getElementById('editor');
+  if (!editor) return;
   const text = editor.innerText;
 
   // Open chat for processing
   const aiPopup = document.getElementById('aiPopup');
-  const aiInput = document.getElementById('aiInput');
-  const aiSend = document.getElementById('aiSend');
+  const selectedModel = document.getElementById('aiModelSelector')?.value
+    || localStorage.getItem('proedit_ai_model')
+    || 'gemini-2.5-flash';
 
-  aiPopup.classList.add('visible');
-  addAiMessage("Thinking...", 'ai');
+  if (aiPopup) {
+    aiPopup.style.display = 'flex';
+    aiPopup.classList.add('visible');
+  }
+  const actionLabel = action === 'continue'
+    ? 'Continuing'
+    : action === 'summarize'
+      ? 'Summarizing'
+      : action === 'improve'
+        ? 'Improving'
+        : 'Thinking';
+  const clearLoading = addAiLoadingMessage(actionLabel);
 
   let prompt = "";
   switch (action) {
@@ -4332,27 +4786,36 @@ async function triggerSlashAction(action) {
       break;
   }
 
-  if (prompt) {
-    try {
-      const selectedModel = aiModelSelector.value;
-      const response = await generateContent(prompt, selectedModel);
-      addAiMessage(response);
+  if (!prompt) {
+    clearLoading();
+    return;
+  }
 
-      if (action === 'continue') {
-        const p = document.createElement('p');
-        p.innerHTML = response.replace(/\n/g, '<br>');
-        editor.appendChild(p);
-        updateCurrentDoc({ content: editor.innerHTML });
+  try {
+    const response = await generateContent(prompt, selectedModel);
+    addAiMessage(response);
+
+    if (action === 'continue') {
+      const p = document.createElement('p');
+      p.innerHTML = response.replace(/\n/g, '<br>');
+      editor.appendChild(p);
+      updateCurrentDoc({ content: editor.innerHTML });
+      if (collaborationManager) {
+        collaborationManager.sendTextUpdate(editor.innerHTML);
       }
-    } catch (err) {
-      addAiMessage("Error generating content.");
     }
+  } catch (err) {
+    addAiMessage("Error generating content.");
+    console.error('Slash command error:', err);
+  } finally {
+    clearLoading();
   }
 }
 
 function showAiPopup(content, isLoading = false) {
   // Deprecated in favor of chat interface, but kept for compatibility if needed
   const popup = document.getElementById('aiPopup');
+  popup.style.display = 'flex';
   popup.classList.add('visible');
   if (content) addAiMessage(content);
 }
