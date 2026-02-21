@@ -3,7 +3,7 @@ import './editor-minimal.css';
 import { generateContent, evaluateModels, generateLayouts } from './api/gemini.js';
 import { CollaborationManager } from './api/collaboration.js';
 import {
-  supabase, signIn, signUp, signOut, signInWithProvider, resetPassword, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument, getDocumentPermissions, addComment, getComments, updateComment, deleteComment, getDocumentChatMessages, createDocumentChatMessage, deleteDocumentChatMessage, clearDocumentChatMessages, subscribeToDocumentChat
+  supabase, signIn, signUp, signOut, signInWithProvider, resetPassword, getDocuments, createDocument, updateDocument, deleteDocument, submitFeedback, getPublicDocument, getSharedDocuments, shareDocument, getDocumentPermissions, addComment, getComments, updateComment, deleteComment, getDocumentChatMessages, createDocumentChatMessage, deleteDocumentChatMessage, clearDocumentChatMessages, subscribeToDocumentChat, uploadEditorAsset
 } from './api/supabase.js';
 
 
@@ -24,11 +24,20 @@ let commentHighlightResizeHandler = null;
 let slashTriggerRange = null;
 let globalLoadingDepth = 0;
 let globalLoaderEl = null;
+let activeTableContext = null;
+let tableContextMenuEl = null;
+let tableContextMenuBound = false;
+let toolbarMenuDismissBound = false;
 
 // DOM Elements
 const app = document.querySelector('#app');
 const RESET_PASSWORD_PATH = '/reset-password';
+const LOGIN_PATH = '/login';
+const SIGNUP_PATH = '/signup';
 const TEMPLATE_ORDER = ['blank', 'meeting', 'proposal', 'report', 'letter', 'resume', 'blog'];
+const EDITOR_FONT_FAMILIES = ['Arial', 'Inter', 'Merriweather', 'Playfair Display', 'Georgia', 'Times New Roman', 'Courier New'];
+const EDITOR_FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40];
+const EDITOR_LINE_SPACING = ['1', '1.15', '1.5', '2'];
 const TEMPLATE_LIBRARY = {
   blank: {
     name: 'Blank Document',
@@ -427,6 +436,40 @@ function normalizePathname(pathname) {
   return normalized || '/';
 }
 
+function normalizeAuthMode(mode) {
+  return String(mode || '').toLowerCase() === 'signup' ? 'signup' : 'login';
+}
+
+function getAuthPath(mode = 'login') {
+  return normalizeAuthMode(mode) === 'signup' ? SIGNUP_PATH : LOGIN_PATH;
+}
+
+function getAuthModeFromLocation(location = window.location) {
+  const path = normalizePathname(location.pathname);
+  if (path === SIGNUP_PATH) return 'signup';
+  if (path === LOGIN_PATH) return 'login';
+
+  const searchParams = new URLSearchParams(location.search || '');
+  const authMode = searchParams.get('auth');
+  if (authMode === 'signup' || authMode === 'login') {
+    return authMode;
+  }
+
+  const hashValue = String(location.hash || '').replace(/^#/, '').toLowerCase();
+  if (hashValue === 'signup' || hashValue === 'login') {
+    return hashValue;
+  }
+
+  return null;
+}
+
+function syncAuthRoute(mode = 'login', { replace = false } = {}) {
+  const targetPath = getAuthPath(mode);
+  const currentPath = normalizePathname(window.location.pathname);
+  if (currentPath === targetPath) return;
+  window.history[replace ? 'replaceState' : 'pushState']({}, '', targetPath);
+}
+
 function isResetPasswordRoute() {
   return normalizePathname(window.location.pathname) === RESET_PASSWORD_PATH;
 }
@@ -495,6 +538,7 @@ async function init() {
     // Check URL for doc ID
     const urlParams = new URLSearchParams(window.location.search);
     const docId = urlParams.get('doc');
+    const authModeFromRoute = getAuthModeFromLocation();
 
     if (user) {
       await migrateLocalDocsToSupabase();
@@ -521,6 +565,8 @@ async function init() {
     } else if (docId) {
       // Not logged in but doc param exists -> try public doc
       await loadPublicDocument(docId);
+    } else if (authModeFromRoute) {
+      renderLogin({ mode: authModeFromRoute, syncUrl: false });
     } else {
       renderLanding();
     }
@@ -531,7 +577,12 @@ async function init() {
         loadDocs();
         renderDashboard();
       } else {
-        renderLanding();
+        const mode = getAuthModeFromLocation();
+        if (mode) {
+          renderLogin({ mode, syncUrl: false });
+        } else {
+          renderLanding();
+        }
       }
     });
   });
@@ -542,6 +593,29 @@ window.addEventListener('beforeunload', async () => {
   if (sessionStorage.getItem('proedit_remember_me') === 'false') {
     // Don't actually sign out here as it's async and won't complete
     // Just clear the flag - we check it on init
+  }
+});
+
+window.addEventListener('popstate', async () => {
+  if (user) return;
+
+  if (isResetPasswordRoute()) {
+    await handleResetPasswordRoute();
+    return;
+  }
+
+  const urlParams = new URLSearchParams(window.location.search);
+  const docId = urlParams.get('doc');
+  if (docId) {
+    await loadPublicDocument(docId);
+    return;
+  }
+
+  const mode = getAuthModeFromLocation();
+  if (mode) {
+    renderLogin({ mode, syncUrl: false });
+  } else {
+    renderLanding();
   }
 });
 
@@ -588,7 +662,15 @@ function renderLanding() {
   `;
 }
 
-function renderLogin() {
+function renderLogin(options = {}) {
+  const normalizedOptions = typeof options === 'string' ? { mode: options } : options;
+  const initialMode = normalizeAuthMode(normalizedOptions.mode || getAuthModeFromLocation() || 'login');
+  const shouldSyncUrl = normalizedOptions.syncUrl !== false;
+  const shouldReplaceUrl = normalizedOptions.replaceUrl === true;
+  if (shouldSyncUrl) {
+    syncAuthRoute(initialMode, { replace: shouldReplaceUrl });
+  }
+
   app.innerHTML = `
     <div class="login-container">
       <div class="login-card">
@@ -674,6 +756,19 @@ function renderLogin() {
   const rememberMeContainer = document.querySelector('.remember-me');
   let isSignUp = false;
 
+  const applyAuthMode = (mode, routeOptions = {}) => {
+    const safeMode = normalizeAuthMode(mode);
+    isSignUp = safeMode === 'signup';
+    loginTab.classList.toggle('active', !isSignUp);
+    signupTab.classList.toggle('active', isSignUp);
+    btnText.textContent = isSignUp ? 'Sign Up' : 'Log In';
+    forgotPassword.style.display = isSignUp ? 'none' : 'block';
+    rememberMeContainer.style.display = isSignUp ? 'none' : 'flex';
+    if (routeOptions.syncUrl !== false) {
+      syncAuthRoute(safeMode);
+    }
+  };
+
   // Password toggle
   passwordToggle.addEventListener('click', () => {
     const type = passwordInput.type === 'password' ? 'text' : 'password';
@@ -694,25 +789,17 @@ function renderLogin() {
   // Tab switching
   loginTab.addEventListener('click', () => {
     if (isSignUp) {
-      isSignUp = false;
-      loginTab.classList.add('active');
-      signupTab.classList.remove('active');
-      btnText.textContent = 'Log In';
-      forgotPassword.style.display = 'block';
-      rememberMeContainer.style.display = 'flex';
+      applyAuthMode('login');
     }
   });
 
   signupTab.addEventListener('click', () => {
     if (!isSignUp) {
-      isSignUp = true;
-      signupTab.classList.add('active');
-      loginTab.classList.remove('active');
-      btnText.textContent = 'Sign Up';
-      forgotPassword.style.display = 'none';
-      rememberMeContainer.style.display = 'none';
+      applyAuthMode('signup');
     }
   });
+
+  applyAuthMode(initialMode, { syncUrl: false });
 
   // Form submission
   form.addEventListener('submit', async (e) => {
@@ -774,7 +861,11 @@ function renderLogin() {
       return;
     }
 
-    const confirmReset = confirm(`Send password reset email to ${email}?`);
+    const confirmReset = await showCustomConfirm(`Send password reset email to ${email}?`, {
+      title: 'Reset password',
+      confirmLabel: 'Send',
+      cancelLabel: 'Cancel'
+    });
     if (!confirmReset) return;
 
     const { error } = await resetPassword(email);
@@ -842,8 +933,7 @@ function renderResetPassword({ valid = false, message = '' } = {}) {
     const backBtn = document.getElementById('resetBackToLoginBtn');
     if (backBtn) {
       backBtn.addEventListener('click', () => {
-        window.history.replaceState({}, '', '/');
-        renderLogin();
+        renderLogin({ mode: 'login', replaceUrl: true });
       });
     }
     return;
@@ -907,8 +997,7 @@ function renderResetPassword({ valid = false, message = '' } = {}) {
 
     await signOut();
     setTimeout(() => {
-      window.history.replaceState({}, '', '/');
-      renderLogin();
+      renderLogin({ mode: 'login', replaceUrl: true });
     }, 1000);
   });
 }
@@ -1588,6 +1677,8 @@ function renderDashboard() {
 async function renderEditor() {
   const doc = documents.find(d => d.id === currentDocId);
   if (!doc) return;
+  pendingAiChangeBatch = null;
+  clearAiChangeControlLayer();
 
   // Init Collaboration
   if (collaborationManager) collaborationManager.leave();
@@ -1604,12 +1695,15 @@ async function renderEditor() {
       onTextUpdate: (payload) => {
         const editor = document.getElementById('editor');
         if (editor) {
+          pendingAiChangeBatch = null;
+          clearAiChangeControlLayer();
           const editorArea = editor.closest('.editor-area');
           const savedScrollTop = editorArea ? editorArea.scrollTop : null;
           const savedScrollLeft = editorArea ? editorArea.scrollLeft : null;
           const selectionOffsets = getCurrentSelectionOffsetsInEditor(editor);
 
           editor.innerHTML = payload.content;
+          ensureResizableImages(editor);
 
           if (selectionOffsets) {
             restoreSelectionOffsetsInEditor(editor, selectionOffsets);
@@ -1675,58 +1769,7 @@ async function renderEditor() {
       <!-- Main Editor Layout (Original) -->
       <div class="editor-container">
         <!-- Toolbar -->
-        <div class="toolbar">
-        <button class="tool-btn" id="undoBtn" title="Undo">
-          <i class="iconoir-undo"></i>
-        </button>
-        <button class="tool-btn" id="redoBtn" title="Redo">
-          <i class="iconoir-redo"></i>
-        </button>
-
-        <select id="fontFamily" class="font-select">
-          <option value="Arial">Arial</option>
-          <option value="Inter">Inter</option>
-          <option value="Merriweather">Merriweather</option>
-          <option value="Playfair Display">Playfair</option>
-          <option value="Georgia">Georgia</option>
-        </select>
-
-        <input id="fontSize" class="font-size-select" type="number" min="12" max="248" value="16"/>
-
-        <button class="tool-btn" data-cmd="bold" title="Bold (⌘B)">
-          <i class="iconoir-bold"></i>
-        </button>
-        <button class="tool-btn" data-cmd="italic" title="Italic (⌘I)">
-          <i class="iconoir-italic"></i>
-        </button>
-        <button class="tool-btn" data-cmd="underline" title="Underline (⌘U)">
-          <i class="iconoir-underline"></i>
-        </button>
-
-        <button class="tool-btn" data-cmd="justifyLeft" title="Align Left">
-          <i class="iconoir-align-left"></i>
-        </button>
-        <button class="tool-btn" data-cmd="justifyCenter" title="Align Center">
-          <i class="iconoir-align-center"></i>
-        </button>
-        <button class="tool-btn" data-cmd="justifyRight" title="Align Right">
-          <i class="iconoir-align-right"></i>
-        </button>
-        <button class="tool-btn" data-cmd="justifyFull" title="Justify">
-          <i class="iconoir-align-justify"></i>
-        </button>
-
-        <button class="tool-btn" data-cmd="insertUnorderedList" title="Bullet list">
-          <i class="iconoir-list"></i>
-        </button>
-        <button class="tool-btn" data-cmd="insertOrderedList" title="Numbered list">
-          <i class="iconoir-numbered-list-left"></i>
-        </button>
-
-        <button class="tool-btn" id="exportBtn2" title="Download">
-          <i class="iconoir-download"></i>
-        </button>
-        </div>
+        ${getFormattingToolbarMarkup({ toolbarId: 'editorToolbar', includeExport: true })}
 
         <!-- Editor -->
         <div class="editor-area">
@@ -2076,6 +2119,8 @@ async function openDoc(id, options = {}) {
 }
 
 function closeDoc() {
+  pendingAiChangeBatch = null;
+  clearAiChangeControlLayer();
   if (documentChatUnsubscribe) {
     documentChatUnsubscribe();
     documentChatUnsubscribe = null;
@@ -2092,7 +2137,11 @@ window.closeDoc = closeDoc;
 
 window.deleteDoc = async (e, id) => {
   e.stopPropagation();
-  if (confirm('Are you sure you want to delete this document?')) {
+  if (await showCustomConfirm('Are you sure you want to delete this document?', {
+    title: 'Delete document',
+    confirmLabel: 'Delete',
+    cancelLabel: 'Keep'
+  })) {
     const { error } = await deleteDocument(id);
     if (error) {
       console.error('Error deleting document:', error);
@@ -2214,6 +2263,8 @@ async function loadPublicDocument(docId) {
 function renderPublicEditor() {
   const doc = documents.find(d => d.id === currentDocId);
   if (!doc) return;
+  pendingAiChangeBatch = null;
+  clearAiChangeControlLayer();
 
   app.innerHTML = `
         <div class="editor-layout">
@@ -2242,6 +2293,12 @@ function renderPublicEditor() {
 let currentSelection = null;
 
 let customAlertHost = null;
+let customDialogQueue = [];
+let customDialogActive = false;
+let pendingAiChangeBatch = null;
+let aiChangeControlLayer = null;
+let aiChangeControlRaf = null;
+let aiChangeResizeBound = false;
 
 function ensureCustomAlertHost() {
   if (customAlertHost && document.body.contains(customAlertHost)) return customAlertHost;
@@ -2275,6 +2332,1697 @@ function showCustomAlert(message, type = 'info') {
 
   setTimeout(dismiss, 2600);
   alertEl.addEventListener('click', dismiss);
+}
+
+function queueCustomDialog(openDialog) {
+  return new Promise((resolve) => {
+    customDialogQueue.push({ openDialog, resolve });
+    flushCustomDialogQueue();
+  });
+}
+
+function flushCustomDialogQueue() {
+  if (customDialogActive || customDialogQueue.length === 0) return;
+
+  const next = customDialogQueue.shift();
+  customDialogActive = true;
+  let settled = false;
+
+  const done = (value) => {
+    if (settled) return;
+    settled = true;
+    next.resolve(value);
+    customDialogActive = false;
+    flushCustomDialogQueue();
+  };
+
+  try {
+    next.openDialog(done);
+  } catch (error) {
+    console.error('Failed to open custom dialog:', error);
+    done(null);
+  }
+}
+
+function createCustomDialogButton(label, variant = 'secondary') {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `custom-alert-dialog-btn ${variant}`;
+  button.textContent = String(label || '');
+  return button;
+}
+
+function showCustomInteractionDialog({
+  title = 'Action required',
+  message = '',
+  icon = 'iconoir-info-circle',
+  cancelValue = null,
+  allowBackdropClose = false,
+  allowEscapeClose = true,
+  buildControls
+} = {}) {
+  return queueCustomDialog((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'custom-alert-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="custom-alert-dialog" role="dialog" aria-modal="true">
+        <div class="custom-alert-dialog-header">
+          <span class="custom-alert-dialog-icon"><i class="${icon}"></i></span>
+          <div class="custom-alert-dialog-title"></div>
+        </div>
+        <div class="custom-alert-dialog-message"></div>
+        <div class="custom-alert-dialog-controls"></div>
+      </div>
+    `;
+
+    const dialog = overlay.querySelector('.custom-alert-dialog');
+    const titleEl = overlay.querySelector('.custom-alert-dialog-title');
+    const messageEl = overlay.querySelector('.custom-alert-dialog-message');
+    const controlsEl = overlay.querySelector('.custom-alert-dialog-controls');
+
+    titleEl.textContent = String(title || 'Action required');
+    messageEl.textContent = String(message || '');
+    dialog.setAttribute('aria-label', titleEl.textContent);
+
+    let closed = false;
+    const closeDialog = (value = cancelValue) => {
+      if (closed) return;
+      closed = true;
+      document.removeEventListener('keydown', onKeyDown, true);
+      overlay.classList.remove('show');
+      overlay.classList.add('hide');
+      window.setTimeout(() => {
+        overlay.remove();
+        if (!document.querySelector('.custom-alert-dialog-overlay')) {
+          document.body.classList.remove('custom-alert-dialog-open');
+        }
+        resolve(value);
+      }, 170);
+    };
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && allowEscapeClose) {
+        event.preventDefault();
+        closeDialog(cancelValue);
+      }
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+
+    if (allowBackdropClose) {
+      overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) closeDialog(cancelValue);
+      });
+    }
+
+    if (typeof buildControls === 'function') {
+      buildControls({ controlsEl, closeDialog });
+    }
+
+    document.body.classList.add('custom-alert-dialog-open');
+    document.body.appendChild(overlay);
+
+    requestAnimationFrame(() => {
+      overlay.classList.add('show');
+      const focusTarget = overlay.querySelector(
+        '[data-autofocus], button, input, select, textarea, [href], [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusTarget) focusTarget.focus();
+    });
+  });
+}
+
+function showCustomConfirm(message, options = {}) {
+  const {
+    title = 'Please confirm',
+    confirmLabel = 'Yes',
+    cancelLabel = 'No',
+    icon = 'iconoir-info-circle'
+  } = options;
+
+  return showCustomInteractionDialog({
+    title,
+    message,
+    icon,
+    cancelValue: false,
+    allowBackdropClose: true,
+    buildControls: ({ controlsEl, closeDialog }) => {
+      const actions = document.createElement('div');
+      actions.className = 'custom-alert-dialog-actions';
+
+      const cancelBtn = createCustomDialogButton(cancelLabel, 'secondary');
+      const confirmBtn = createCustomDialogButton(confirmLabel, 'primary');
+      confirmBtn.dataset.autofocus = 'true';
+
+      cancelBtn.addEventListener('click', () => closeDialog(false));
+      confirmBtn.addEventListener('click', () => closeDialog(true));
+
+      actions.append(cancelBtn, confirmBtn);
+      controlsEl.appendChild(actions);
+    }
+  });
+}
+
+function escapeHtmlAttribute(value = '') {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function getFormattingToolbarMarkup({ toolbarId = '', extraClass = '', includeExport = false } = {}) {
+  const toolbarIdAttr = toolbarId ? `id="${toolbarId}"` : '';
+  const fontOptions = EDITOR_FONT_FAMILIES
+    .map((font) => `<option value="${escapeHtmlAttribute(font)}" ${font === 'Arial' ? 'selected' : ''}>${escapeHtmlAttribute(font)}</option>`)
+    .join('');
+  const sizeOptions = EDITOR_FONT_SIZES
+    .map((size) => `<option value="${size}" ${size === 16 ? 'selected' : ''}>${size}</option>`)
+    .join('');
+
+  return `
+    <div class="toolbar rich-format-toolbar ${extraClass}" ${toolbarIdAttr}>
+      <div class="toolbar-scroll-row">
+        <select class="toolbar-select toolbar-select-wide" data-editor-select="font-family" title="Font family">
+          ${fontOptions}
+        </select>
+        <select class="toolbar-select" data-editor-select="font-size" title="Font size">
+          ${sizeOptions}
+        </select>
+
+        <button type="button" class="tool-btn" data-editor-cmd="bold" title="Bold"><i class="iconoir-bold"></i></button>
+        <button type="button" class="tool-btn" data-editor-cmd="italic" title="Italic"><i class="iconoir-italic"></i></button>
+        <button type="button" class="tool-btn" data-editor-cmd="underline" title="Underline"><i class="iconoir-underline"></i></button>
+
+        <button type="button" class="tool-btn" data-editor-cmd="justifyLeft" title="Align Left"><i class="iconoir-align-left"></i></button>
+        <button type="button" class="tool-btn" data-editor-cmd="justifyCenter" title="Align Center"><i class="iconoir-align-center"></i></button>
+        <button type="button" class="tool-btn" data-editor-cmd="justifyRight" title="Align Right"><i class="iconoir-align-right"></i></button>
+        <button type="button" class="tool-btn" data-editor-cmd="justifyFull" title="Justify"><i class="iconoir-align-justify"></i></button>
+
+        <button type="button" class="tool-btn" data-editor-cmd="insertUnorderedList" title="Bulleted list"><i class="iconoir-list"></i></button>
+        <button type="button" class="tool-btn" data-editor-cmd="insertOrderedList" title="Numbered list"><i class="iconoir-numbered-list-left"></i></button>
+
+        ${includeExport ? '<button type="button" class="tool-btn" id="exportBtn2" title="Download"><i class="iconoir-download"></i></button>' : ''}
+      </div>
+    </div>
+  `;
+}
+
+function isRangeInsideEditable(editable, range) {
+  if (!editable || !range) return false;
+  const container = range.commonAncestorContainer;
+  return editable === container || editable.contains(container);
+}
+
+function createSelectionMemory(editable) {
+  const memory = { range: null };
+
+  const save = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (!isRangeInsideEditable(editable, range)) return;
+    memory.range = range.cloneRange();
+  };
+
+  const restore = () => {
+    if (!memory.range) return false;
+    if (!isRangeInsideEditable(editable, memory.range)) return false;
+    const selection = window.getSelection();
+    if (!selection) return false;
+    selection.removeAllRanges();
+    selection.addRange(memory.range);
+    return true;
+  };
+
+  editable.addEventListener('mouseup', save);
+  editable.addEventListener('keyup', save);
+  editable.addEventListener('input', save);
+
+  return { save, restore, memory };
+}
+
+function ensureEditableSelection(editable, selectionMemory) {
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount > 0 && isRangeInsideEditable(editable, selection.getRangeAt(0))) {
+    return true;
+  }
+  return selectionMemory?.restore?.() || false;
+}
+
+function executeEditorCommand(editable, selectionMemory, command, value = null) {
+  if (!editable) return false;
+  editable.focus();
+  ensureEditableSelection(editable, selectionMemory);
+  try {
+    document.execCommand(command, false, value);
+    selectionMemory?.save?.();
+    return true;
+  } catch (error) {
+    console.error(`Failed to execute command: ${command}`, error);
+    return false;
+  }
+}
+
+function applyFontSizeToEditable(editable, selectionMemory, size) {
+  const safeSize = Number(size);
+  if (!Number.isFinite(safeSize)) return;
+  executeEditorCommand(editable, selectionMemory, 'fontSize', '7');
+  editable.querySelectorAll('font[size="7"]').forEach((el) => {
+    el.removeAttribute('size');
+    el.style.fontSize = `${safeSize}px`;
+  });
+}
+
+function getClosestBlockElement(node, editable) {
+  const blocks = ['P', 'DIV', 'LI', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TD', 'TH'];
+  let current = node?.nodeType === Node.ELEMENT_NODE ? node : node?.parentElement;
+  while (current && current !== editable) {
+    if (blocks.includes(current.tagName)) return current;
+    current = current.parentElement;
+  }
+  return editable;
+}
+
+function applyLineSpacingToEditable(editable, selectionMemory, spacing) {
+  const safeSpacing = String(spacing || '').trim();
+  if (!safeSpacing) return;
+  editable.focus();
+  ensureEditableSelection(editable, selectionMemory);
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return;
+  const range = selection.getRangeAt(0);
+  const startBlock = getClosestBlockElement(range.startContainer, editable);
+  const endBlock = getClosestBlockElement(range.endContainer, editable);
+  if (startBlock) startBlock.style.lineHeight = safeSpacing;
+  if (endBlock && endBlock !== startBlock) endBlock.style.lineHeight = safeSpacing;
+  selectionMemory?.save?.();
+}
+
+async function pickFileFromDevice(accept = '*/*') {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    input.addEventListener('change', () => {
+      const file = input.files?.[0] || null;
+      input.remove();
+      resolve(file);
+    }, { once: true });
+
+    input.click();
+  });
+}
+
+async function showLinkDialog(initialValue = 'https://') {
+  const result = await showCustomInteractionDialog({
+    title: 'Insert Link',
+    message: 'Add a URL to insert as a link.',
+    icon: 'iconoir-link',
+    cancelValue: '',
+    allowBackdropClose: true,
+    buildControls: ({ controlsEl, closeDialog }) => {
+      const input = document.createElement('input');
+      input.type = 'url';
+      input.className = 'custom-alert-dialog-input';
+      input.value = initialValue;
+      input.placeholder = 'https://example.com';
+      input.dataset.autofocus = 'true';
+      controlsEl.appendChild(input);
+
+      const actions = document.createElement('div');
+      actions.className = 'custom-alert-dialog-actions';
+
+      const cancelBtn = createCustomDialogButton('Cancel', 'secondary');
+      const insertBtn = createCustomDialogButton('Insert Link', 'primary');
+
+      const submit = () => {
+        const value = input.value.trim();
+        if (!value) {
+          showCustomAlert('Enter a valid URL');
+          return;
+        }
+        closeDialog(value);
+      };
+
+      cancelBtn.addEventListener('click', () => closeDialog(''));
+      insertBtn.addEventListener('click', submit);
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          submit();
+        }
+      });
+
+      actions.append(cancelBtn, insertBtn);
+      controlsEl.appendChild(actions);
+    }
+  });
+
+  return String(result || '').trim();
+}
+
+function triggerEditableInput(editable) {
+  if (!editable) return;
+  editable.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function clampPositiveInteger(value, min = 1, max = 20, fallback = min) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+async function showTableInsertDialog(defaultRows = 3, defaultCols = 3) {
+  const result = await showCustomInteractionDialog({
+    title: 'Insert Table',
+    message: 'Choose how many rows and columns to insert.',
+    icon: 'iconoir-table',
+    cancelValue: null,
+    allowBackdropClose: true,
+    buildControls: ({ controlsEl, closeDialog }) => {
+      const row = document.createElement('div');
+      row.className = 'custom-alert-dialog-inline';
+
+      const rowsInput = document.createElement('input');
+      rowsInput.type = 'number';
+      rowsInput.className = 'custom-alert-dialog-input';
+      rowsInput.min = '1';
+      rowsInput.max = '20';
+      rowsInput.step = '1';
+      rowsInput.value = String(defaultRows);
+      rowsInput.placeholder = 'Rows';
+      rowsInput.dataset.autofocus = 'true';
+
+      const colsInput = document.createElement('input');
+      colsInput.type = 'number';
+      colsInput.className = 'custom-alert-dialog-input';
+      colsInput.min = '1';
+      colsInput.max = '20';
+      colsInput.step = '1';
+      colsInput.value = String(defaultCols);
+      colsInput.placeholder = 'Columns';
+
+      row.append(rowsInput, colsInput);
+      controlsEl.appendChild(row);
+
+      const actions = document.createElement('div');
+      actions.className = 'custom-alert-dialog-actions';
+
+      const cancelBtn = createCustomDialogButton('Cancel', 'secondary');
+      const insertBtn = createCustomDialogButton('Insert Table', 'primary');
+
+      const submit = () => {
+        const rows = clampPositiveInteger(rowsInput.value, 1, 20, defaultRows);
+        const cols = clampPositiveInteger(colsInput.value, 1, 20, defaultCols);
+        closeDialog({ rows, cols });
+      };
+
+      cancelBtn.addEventListener('click', () => closeDialog(null));
+      insertBtn.addEventListener('click', submit);
+      [rowsInput, colsInput].forEach((input) => {
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            submit();
+          }
+        });
+      });
+
+      actions.append(cancelBtn, insertBtn);
+      controlsEl.appendChild(actions);
+    }
+  });
+
+  if (!result || typeof result !== 'object') return null;
+  const rows = clampPositiveInteger(result.rows, 1, 20, defaultRows);
+  const cols = clampPositiveInteger(result.cols, 1, 20, defaultCols);
+  return { rows, cols };
+}
+
+async function showCountPickerDialog({
+  title = 'Set count',
+  message = 'Enter a number.',
+  defaultValue = 1,
+  min = 1,
+  max = 20,
+  confirmLabel = 'Apply',
+  icon = 'iconoir-plus'
+} = {}) {
+  const result = await showCustomInteractionDialog({
+    title,
+    message,
+    icon,
+    cancelValue: null,
+    allowBackdropClose: true,
+    buildControls: ({ controlsEl, closeDialog }) => {
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.className = 'custom-alert-dialog-input';
+      input.min = String(min);
+      input.max = String(max);
+      input.step = '1';
+      input.value = String(defaultValue);
+      input.dataset.autofocus = 'true';
+      controlsEl.appendChild(input);
+
+      const actions = document.createElement('div');
+      actions.className = 'custom-alert-dialog-actions';
+
+      const cancelBtn = createCustomDialogButton('Cancel', 'secondary');
+      const applyBtn = createCustomDialogButton(confirmLabel, 'primary');
+
+      const submit = () => {
+        closeDialog(clampPositiveInteger(input.value, min, max, defaultValue));
+      };
+
+      cancelBtn.addEventListener('click', () => closeDialog(null));
+      applyBtn.addEventListener('click', submit);
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          submit();
+        }
+      });
+
+      actions.append(cancelBtn, applyBtn);
+      controlsEl.appendChild(actions);
+    }
+  });
+
+  if (result == null) return null;
+  return clampPositiveInteger(result, min, max, defaultValue);
+}
+
+function createResizableImageHtml(url, alt = 'media') {
+  const safeUrl = escapeHtmlAttribute(url);
+  const safeAlt = escapeHtmlAttribute(alt);
+  return `<span class="editor-image-frame" contenteditable="false" style="width:320px;max-width:100%;">
+    <img src="${safeUrl}" alt="${safeAlt}" class="editor-image-el" />
+    <span class="editor-image-resize-handle" data-image-resize-handle="true" aria-hidden="true"></span>
+  </span>`;
+}
+
+function wrapImageInResizableFrame(img) {
+  if (!img || img.closest('.editor-image-frame')) return null;
+  const frame = document.createElement('span');
+  frame.className = 'editor-image-frame';
+  frame.contentEditable = 'false';
+
+  const widthFromStyle = Number.parseInt(img.style.width, 10);
+  const widthFromAttr = Number.parseInt(img.getAttribute('width') || '', 10);
+  const renderedWidth = Math.round(img.getBoundingClientRect().width || 0);
+  const resolvedWidth = [widthFromStyle, widthFromAttr, renderedWidth].find((value) => Number.isFinite(value) && value > 24) || 320;
+  frame.style.width = `${Math.min(resolvedWidth, 860)}px`;
+  frame.style.maxWidth = '100%';
+
+  img.removeAttribute('width');
+  img.removeAttribute('height');
+  img.classList.add('editor-image-el');
+  img.style.width = '100%';
+  img.style.height = 'auto';
+  img.style.display = 'block';
+
+  const handle = document.createElement('span');
+  handle.className = 'editor-image-resize-handle';
+  handle.setAttribute('data-image-resize-handle', 'true');
+  handle.setAttribute('aria-hidden', 'true');
+
+  const parent = img.parentNode;
+  if (!parent) return null;
+  parent.replaceChild(frame, img);
+  frame.appendChild(img);
+  frame.appendChild(handle);
+  return frame;
+}
+
+function ensureResizableImages(editable) {
+  if (!editable) return;
+  editable.querySelectorAll('img').forEach((img) => {
+    wrapImageInResizableFrame(img);
+  });
+}
+
+function setupResizableImages(editable) {
+  if (!editable || editable.dataset.imageResizeBound === 'true') {
+    ensureResizableImages(editable);
+    return;
+  }
+  editable.dataset.imageResizeBound = 'true';
+  ensureResizableImages(editable);
+
+  let selectedFrame = null;
+  let resizeState = null;
+
+  const clearSelection = () => {
+    if (!selectedFrame) return;
+    selectedFrame.classList.remove('is-selected');
+    selectedFrame = null;
+  };
+
+  const selectFrame = (frame) => {
+    if (selectedFrame === frame) return;
+    if (selectedFrame) selectedFrame.classList.remove('is-selected');
+    selectedFrame = frame || null;
+    if (selectedFrame) selectedFrame.classList.add('is-selected');
+  };
+
+  const stopResize = () => {
+    if (!resizeState) return;
+    document.removeEventListener('mousemove', onMouseMove);
+    document.body.classList.remove('editor-image-resizing');
+    resizeState = null;
+    triggerEditableInput(editable);
+  };
+
+  const onMouseMove = (event) => {
+    if (!resizeState) return;
+    const deltaX = event.clientX - resizeState.startX;
+    const nextWidth = Math.max(90, Math.min(resizeState.maxWidth, resizeState.startWidth + deltaX));
+    resizeState.frame.style.width = `${Math.round(nextWidth)}px`;
+  };
+
+  editable.addEventListener('click', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const frame = target.closest('.editor-image-frame');
+    if (frame && editable.contains(frame)) {
+      selectFrame(frame);
+      editable.focus();
+      return;
+    }
+    clearSelection();
+  });
+
+  editable.addEventListener('mousedown', (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const handle = target.closest('[data-image-resize-handle]');
+    if (!handle) return;
+    const frame = handle.closest('.editor-image-frame');
+    if (!frame || !editable.contains(frame)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    selectFrame(frame);
+    const frameRect = frame.getBoundingClientRect();
+    const editableRect = editable.getBoundingClientRect();
+    resizeState = {
+      frame,
+      startX: event.clientX,
+      startWidth: frameRect.width,
+      maxWidth: Math.max(120, editableRect.width - 16)
+    };
+
+    document.body.classList.add('editor-image-resizing');
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', stopResize, { once: true });
+  });
+
+  editable.addEventListener('keydown', (event) => {
+    if (!selectedFrame) return;
+    if (event.key !== 'Backspace' && event.key !== 'Delete') return;
+    event.preventDefault();
+    selectedFrame.remove();
+    selectedFrame = null;
+    triggerEditableInput(editable);
+  });
+
+  editable.addEventListener('input', () => {
+    requestAnimationFrame(() => ensureResizableImages(editable));
+  });
+}
+
+function getTableCellContext(target, editable) {
+  if (!(target instanceof Element) || !editable) return null;
+  const cell = target.closest('td,th');
+  if (!cell) return null;
+  const table = cell.closest('table');
+  if (!table || !editable.contains(table)) return null;
+  return { cell, table };
+}
+
+function createEmptyCellFromTemplate(templateCell) {
+  const tagName = templateCell?.tagName?.toLowerCase() === 'th' ? 'th' : 'td';
+  const newCell = document.createElement(tagName);
+  if (templateCell?.style?.cssText) {
+    newCell.style.cssText = templateCell.style.cssText;
+  } else {
+    newCell.style.cssText = 'border:1px solid #CBD5E1;padding:8px;min-width:60px;';
+  }
+  newCell.removeAttribute('id');
+  newCell.innerHTML = '&nbsp;';
+  return newCell;
+}
+
+function addRowsAfterCell(cell, count = 1) {
+  const row = cell?.closest('tr');
+  if (!row || !row.parentElement) return false;
+  const safeCount = clampPositiveInteger(count, 1, 20, 1);
+  let insertAfter = row;
+  for (let i = 0; i < safeCount; i += 1) {
+    const newRow = row.cloneNode(true);
+    newRow.querySelectorAll('th,td').forEach((tableCell) => {
+      tableCell.innerHTML = '&nbsp;';
+    });
+    insertAfter.parentElement.insertBefore(newRow, insertAfter.nextSibling);
+    insertAfter = newRow;
+  }
+  return true;
+}
+
+function addColumnsAfterCell(cell, count = 1) {
+  const table = cell?.closest('table');
+  if (!table) return false;
+  const columnIndex = cell.cellIndex;
+  if (columnIndex < 0) return false;
+  const safeCount = clampPositiveInteger(count, 1, 20, 1);
+
+  Array.from(table.rows).forEach((row) => {
+    for (let i = 0; i < safeCount; i += 1) {
+      const referenceIndex = Math.min(columnIndex, Math.max(0, row.cells.length - 1));
+      const referenceCell = row.cells[referenceIndex] || null;
+      const newCell = createEmptyCellFromTemplate(referenceCell);
+      if (referenceCell) {
+        row.insertBefore(newCell, referenceCell.nextSibling);
+      } else {
+        row.appendChild(newCell);
+      }
+    }
+  });
+  return true;
+}
+
+function deleteRowFromCell(cell) {
+  const row = cell?.closest('tr');
+  const table = row?.closest('table');
+  if (!row || !table) return false;
+  if (table.rows.length <= 1) {
+    table.remove();
+    return true;
+  }
+  row.remove();
+  return true;
+}
+
+function deleteColumnFromCell(cell) {
+  const table = cell?.closest('table');
+  if (!table) return false;
+  const index = cell.cellIndex;
+  if (index < 0) return false;
+
+  let hasRemainingCell = false;
+  Array.from(table.rows).forEach((row) => {
+    if (row.cells[index]) {
+      row.deleteCell(index);
+    }
+    if (row.cells.length > 0) {
+      hasRemainingCell = true;
+    }
+  });
+
+  if (!hasRemainingCell) {
+    table.remove();
+  }
+  return true;
+}
+
+function hideTableContextMenu(options = {}) {
+  const { clearContext = true } = options;
+  if (!tableContextMenuEl) return;
+  tableContextMenuEl.classList.remove('visible');
+  tableContextMenuEl.style.left = '-9999px';
+  tableContextMenuEl.style.top = '-9999px';
+  if (clearContext) {
+    activeTableContext = null;
+  }
+}
+
+function showTableContextMenuAt(x, y) {
+  if (!tableContextMenuEl) return;
+  tableContextMenuEl.classList.add('visible');
+  tableContextMenuEl.style.left = `${x}px`;
+  tableContextMenuEl.style.top = `${y}px`;
+
+  const rect = tableContextMenuEl.getBoundingClientRect();
+  const safeLeft = Math.max(10, Math.min(x, window.innerWidth - rect.width - 10));
+  const safeTop = Math.max(10, Math.min(y, window.innerHeight - rect.height - 10));
+  tableContextMenuEl.style.left = `${safeLeft}px`;
+  tableContextMenuEl.style.top = `${safeTop}px`;
+}
+
+async function runTableContextAction(action) {
+  const context = activeTableContext;
+  if (!context || !context.cell || !context.editable) return;
+  const { editable, cell, table } = context;
+
+  let changed = false;
+  if (action === 'add-row') {
+    changed = addRowsAfterCell(cell, 1);
+  } else if (action === 'add-row-custom') {
+    const count = await showCountPickerDialog({
+      title: 'Add Rows',
+      message: 'How many rows do you want to add below the current row?',
+      defaultValue: 1,
+      confirmLabel: 'Add Rows',
+      icon: 'iconoir-plus'
+    });
+    if (!count) return;
+    changed = addRowsAfterCell(cell, count);
+  } else if (action === 'add-column') {
+    changed = addColumnsAfterCell(cell, 1);
+  } else if (action === 'add-column-custom') {
+    const count = await showCountPickerDialog({
+      title: 'Add Columns',
+      message: 'How many columns do you want to add to the right?',
+      defaultValue: 1,
+      confirmLabel: 'Add Columns',
+      icon: 'iconoir-plus'
+    });
+    if (!count) return;
+    changed = addColumnsAfterCell(cell, count);
+  } else if (action === 'delete-row') {
+    changed = deleteRowFromCell(cell);
+  } else if (action === 'delete-column') {
+    changed = deleteColumnFromCell(cell);
+  } else if (action === 'delete-table') {
+    table.remove();
+    changed = true;
+  }
+
+  if (changed) {
+    triggerEditableInput(editable);
+  }
+}
+
+function ensureTableContextMenu() {
+  if (tableContextMenuEl) return tableContextMenuEl;
+
+  const menu = document.createElement('div');
+  menu.className = 'editor-table-context-menu';
+  menu.innerHTML = `
+    <button type="button" class="editor-table-context-item" data-table-action="add-row">Add Row (+1)</button>
+    <button type="button" class="editor-table-context-item" data-table-action="add-row-custom">Add Rows...</button>
+    <button type="button" class="editor-table-context-item" data-table-action="add-column">Add Column (+1)</button>
+    <button type="button" class="editor-table-context-item" data-table-action="add-column-custom">Add Columns...</button>
+    <div class="editor-table-context-separator"></div>
+    <button type="button" class="editor-table-context-item danger" data-table-action="delete-row">Delete Row</button>
+    <button type="button" class="editor-table-context-item danger" data-table-action="delete-column">Delete Column</button>
+    <button type="button" class="editor-table-context-item danger" data-table-action="delete-table">Delete Table</button>
+  `;
+  document.body.appendChild(menu);
+
+  tableContextMenuEl = menu;
+
+  if (!tableContextMenuBound) {
+    tableContextMenuBound = true;
+
+    document.addEventListener('mousedown', (event) => {
+      if (!tableContextMenuEl) return;
+      if (event.target instanceof Element && tableContextMenuEl.contains(event.target)) return;
+      hideTableContextMenu();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') hideTableContextMenu();
+    });
+
+    window.addEventListener('resize', hideTableContextMenu);
+    window.addEventListener('scroll', hideTableContextMenu, true);
+
+    tableContextMenuEl.addEventListener('click', async (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const actionBtn = target.closest('[data-table-action]');
+      if (!actionBtn) return;
+      const action = actionBtn.getAttribute('data-table-action');
+      hideTableContextMenu({ clearContext: false });
+      await runTableContextAction(action);
+      hideTableContextMenu();
+    });
+  }
+
+  return tableContextMenuEl;
+}
+
+function setupTableContextMenuForEditable(editable, selectionMemory) {
+  if (!editable || editable.dataset.tableContextBound === 'true') return;
+  editable.dataset.tableContextBound = 'true';
+  ensureTableContextMenu();
+
+  editable.addEventListener('contextmenu', (event) => {
+    const context = getTableCellContext(event.target, editable);
+    if (!context) return;
+
+    event.preventDefault();
+    selectionMemory?.save?.();
+    activeTableContext = {
+      editable,
+      selectionMemory,
+      ...context
+    };
+    showTableContextMenuAt(event.clientX, event.clientY);
+  });
+}
+
+function closeToolbarMenus(toolbarEl) {
+  if (!toolbarEl) return;
+  toolbarEl.querySelectorAll('[data-editor-menu-wrap]').forEach((wrap) => {
+    wrap.classList.remove('open');
+  });
+  toolbarEl.querySelectorAll('[data-editor-menu]').forEach((btn) => {
+    btn.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function toggleToolbarMenu(toolbarEl, key) {
+  if (!toolbarEl || !key) return;
+  const menuWrap = toolbarEl.querySelector(`[data-editor-menu-wrap="${key}"]`);
+  if (!menuWrap) return;
+  const shouldOpen = !menuWrap.classList.contains('open');
+
+  closeToolbarMenus(toolbarEl);
+  if (!shouldOpen) return;
+
+  menuWrap.classList.add('open');
+  const button = menuWrap.querySelector('[data-editor-menu]');
+  if (button) button.setAttribute('aria-expanded', 'true');
+}
+
+function closeAllToolbarMenus() {
+  document.querySelectorAll('.rich-format-toolbar [data-editor-menu-wrap].open').forEach((menuWrap) => {
+    menuWrap.classList.remove('open');
+    const button = menuWrap.querySelector('[data-editor-menu]');
+    if (button) button.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function ensureToolbarMenuDismissBinding() {
+  if (toolbarMenuDismissBound) return;
+  toolbarMenuDismissBound = true;
+
+  document.addEventListener('mousedown', (event) => {
+    if (event.target instanceof Element && event.target.closest('.toolbar-menu')) return;
+    closeAllToolbarMenus();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeAllToolbarMenus();
+  });
+}
+
+function runEditMenuAction(editable, selectionMemory, action) {
+  if (action === 'edit-undo') return executeEditorCommand(editable, selectionMemory, 'undo');
+  if (action === 'edit-redo') return executeEditorCommand(editable, selectionMemory, 'redo');
+  if (action === 'edit-cut') return executeEditorCommand(editable, selectionMemory, 'cut');
+  if (action === 'edit-copy') return executeEditorCommand(editable, selectionMemory, 'copy');
+  if (action === 'edit-paste') return executeEditorCommand(editable, selectionMemory, 'paste');
+  if (action === 'edit-select-all') return executeEditorCommand(editable, selectionMemory, 'selectAll');
+  return false;
+}
+
+async function showAiComponentPromptDialog() {
+  const result = await showCustomInteractionDialog({
+    title: 'AI Component Generator',
+    message: 'Describe the component you want to insert.',
+    icon: 'iconoir-sparks',
+    cancelValue: '',
+    allowBackdropClose: true,
+    buildControls: ({ controlsEl, closeDialog }) => {
+      const input = document.createElement('textarea');
+      input.className = 'custom-alert-dialog-textarea';
+      input.placeholder = 'Example: Feature card with gradient background, rounded shape accents, an image area, and CTA button.';
+      input.dataset.autofocus = 'true';
+      controlsEl.appendChild(input);
+
+      const actions = document.createElement('div');
+      actions.className = 'custom-alert-dialog-actions';
+
+      const cancelBtn = createCustomDialogButton('Cancel', 'secondary');
+      const generateBtn = createCustomDialogButton('Generate', 'primary');
+      generateBtn.classList.add('custom-alert-dialog-btn-with-icon');
+      generateBtn.innerHTML = '<i class="iconoir-sparks"></i><span>Generate</span>';
+
+      const submit = () => {
+        const value = input.value.trim();
+        if (!value) {
+          showCustomAlert('Describe what you want to generate');
+          input.focus();
+          return;
+        }
+        closeDialog(value);
+      };
+
+      cancelBtn.addEventListener('click', () => closeDialog(''));
+      generateBtn.addEventListener('click', submit);
+      input.addEventListener('keydown', (event) => {
+        if ((event.key === 'Enter' && (event.metaKey || event.ctrlKey))) {
+          event.preventDefault();
+          submit();
+        }
+      });
+
+      actions.append(cancelBtn, generateBtn);
+      controlsEl.appendChild(actions);
+    }
+  });
+
+  return String(result || '').trim();
+}
+
+async function insertAiGeneratedComponent(editable, selectionMemory, html) {
+  const normalized = sanitizeAiSnippet(html);
+  if (!normalized) return false;
+
+  if (editable.id === 'editor') {
+    if (pendingAiChangeBatch) {
+      await finalizeAiChangeBatch('save', { silent: true });
+    }
+
+    const aiBatchId = createAiChangeBatchId();
+    const beforeHtml = editable.innerHTML;
+    beginAiChangeBatch(beforeHtml, aiBatchId);
+
+    const inserted = insertHtmlIntoEditable(editable, selectionMemory, annotateHtmlForAiBatch(normalized, aiBatchId));
+    if (!inserted) {
+      pendingAiChangeBatch = null;
+      clearAiChangeControlLayer();
+      return false;
+    }
+
+    scheduleCommentHighlightsRender();
+    scheduleAiChangeControlRender();
+    showCustomAlert('AI component inserted and highlighted');
+    return true;
+  }
+
+  return insertHtmlIntoEditable(editable, selectionMemory, normalized);
+}
+
+function insertHtmlIntoEditable(editable, selectionMemory, html) {
+  if (!editable || !html) return false;
+  editable.focus();
+  ensureEditableSelection(editable, selectionMemory);
+  try {
+    const inserted = document.execCommand('insertHTML', false, html);
+    if (!inserted) {
+      editable.insertAdjacentHTML('beforeend', html);
+    }
+    selectionMemory?.save?.();
+    return true;
+  } catch (error) {
+    console.error('Failed to insert HTML into editable area:', error);
+    return false;
+  }
+}
+
+function getDefaultTableHtml(rows = 3, cols = 3) {
+  const safeRows = Math.max(1, Math.min(20, Number(rows) || 3));
+  const safeCols = Math.max(1, Math.min(20, Number(cols) || 3));
+  let bodyRows = '';
+  for (let row = 0; row < safeRows; row += 1) {
+    let cells = '';
+    for (let col = 0; col < safeCols; col += 1) {
+      cells += '<td style="border:1px solid #CBD5E1;padding:8px;min-width:60px;">&nbsp;</td>';
+    }
+    bodyRows += `<tr>${cells}</tr>`;
+  }
+  return `<table style="border-collapse:collapse;width:100%;margin:8px 0;">${bodyRows}</table>`;
+}
+
+async function insertMediaIntoEditable(editable, selectionMemory, options = {}) {
+  const { docId = null } = options;
+  const file = await pickFileFromDevice('image/*,video/*');
+  if (!file) return false;
+
+  const { data, error } = await uploadEditorAsset(file, { docId, folder: 'editor' });
+  if (error) {
+    console.error('Failed to upload media:', error);
+    showCustomAlert(error.message || 'Failed to upload media');
+    return false;
+  }
+
+  const url = String(data?.publicUrl || '').trim();
+  if (!url) {
+    showCustomAlert('Media uploaded but no public URL is available');
+    return false;
+  }
+
+  const safeUrl = escapeHtmlAttribute(url);
+  const html = file.type.startsWith('video/')
+    ? `<video controls style="max-width:100%;height:auto;" src="${safeUrl}"></video>`
+    : createResizableImageHtml(url, file.name || 'media');
+
+  return insertHtmlIntoEditable(editable, selectionMemory, html);
+}
+
+function setToolbarTab(toolbarEl, tabKey) {
+  const safeTab = tabKey === 'insert' ? 'insert' : 'format';
+  toolbarEl.querySelectorAll('[data-toolbar-tab]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.toolbarTab === safeTab);
+  });
+  toolbarEl.querySelectorAll('[data-toolbar-panel]').forEach((panel) => {
+    panel.classList.toggle('active', panel.dataset.toolbarPanel === safeTab);
+  });
+}
+
+function setupRichFormattingToolbar(toolbarEl, editable, options = {}) {
+  if (!toolbarEl || !editable) return;
+  const { docId = null, onMenuAction = null } = options;
+  const selectionMemory = createSelectionMemory(editable);
+  setToolbarTab(toolbarEl, 'format');
+  ensureToolbarMenuDismissBinding();
+  setupTableContextMenuForEditable(editable, selectionMemory);
+  setupResizableImages(editable);
+
+  toolbarEl.querySelectorAll('button').forEach((button) => {
+    button.addEventListener('mousedown', (event) => event.preventDefault());
+  });
+
+  toolbarEl.addEventListener('click', async (event) => {
+    const btn = event.target.closest('button');
+    if (!btn || !toolbarEl.contains(btn)) return;
+
+    const menuKey = btn.dataset.editorMenu;
+    const menuAction = btn.dataset.editorMenuAction;
+    const command = btn.dataset.editorCmd;
+    const action = btn.dataset.editorAction;
+    const tabKey = btn.dataset.toolbarTab;
+
+    if (menuKey) {
+      event.preventDefault();
+      toggleToolbarMenu(toolbarEl, menuKey);
+      return;
+    }
+
+    if (menuAction) {
+      event.preventDefault();
+      closeToolbarMenus(toolbarEl);
+      const handled = runEditMenuAction(editable, selectionMemory, menuAction);
+      if (handled) return;
+      if (typeof onMenuAction === 'function') {
+        await onMenuAction(menuAction, { editable, selectionMemory, docId });
+      }
+      return;
+    }
+
+    event.preventDefault();
+    closeToolbarMenus(toolbarEl);
+
+    if (tabKey) {
+      setToolbarTab(toolbarEl, tabKey);
+      return;
+    }
+
+    if (command) {
+      executeEditorCommand(editable, selectionMemory, command);
+      return;
+    }
+
+    if (action === 'blockquote') {
+      executeEditorCommand(editable, selectionMemory, 'formatBlock', '<blockquote>');
+      return;
+    }
+
+    if (action === 'table') {
+      const tableConfig = await showTableInsertDialog();
+      if (!tableConfig) return;
+      const inserted = insertHtmlIntoEditable(editable, selectionMemory, getDefaultTableHtml(tableConfig.rows, tableConfig.cols));
+      if (inserted) {
+        triggerEditableInput(editable);
+      }
+      return;
+    }
+
+    if (action === 'highlight-apply') {
+      const highlightInput = toolbarEl.querySelector('[data-editor-input="highlight-color"]');
+      const colorValue = highlightInput?.value || '#FFF3A3';
+      const applied = executeEditorCommand(editable, selectionMemory, 'hiliteColor', colorValue);
+      if (!applied) {
+        executeEditorCommand(editable, selectionMemory, 'backColor', colorValue);
+      }
+      return;
+    }
+
+    if (action === 'link') {
+      const url = await showLinkDialog();
+      if (!url) return;
+      editable.focus();
+      ensureEditableSelection(editable, selectionMemory);
+      const selection = window.getSelection();
+      const isCollapsed = !selection || selection.rangeCount === 0 || selection.getRangeAt(0).collapsed;
+      if (isCollapsed) {
+        const safeUrl = escapeHtmlAttribute(url);
+        insertHtmlIntoEditable(editable, selectionMemory, `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer">${safeUrl}</a>`);
+      } else {
+        executeEditorCommand(editable, selectionMemory, 'createLink', url);
+      }
+      return;
+    }
+
+    if (action === 'media') {
+      const inserted = await insertMediaIntoEditable(editable, selectionMemory, { docId });
+      if (inserted) {
+        ensureResizableImages(editable);
+        triggerEditableInput(editable);
+      }
+      return;
+    }
+
+    if (action === 'ai-gen') {
+      const request = await showAiComponentPromptDialog();
+      if (!request) return;
+
+      const selectedModel = document.getElementById('aiModelSelector')?.value
+        || localStorage.getItem('proedit_ai_model')
+        || 'gemini-2.5-flash';
+
+      setButtonLoading(btn, true, 'Generating...');
+      try {
+        const componentPrompt = `You are an HTML component generator for a rich text document editor.
+Create one self-contained, visually polished component based on this request:
+"${request}"
+
+Rules:
+- Return ONLY HTML snippet (no markdown/code fences).
+- Use clean semantic HTML and optional inline styles.
+- Keep it responsive and readable inside a document column.
+- You may include decorative shapes, inline SVG, gradients, and placeholder imagery.
+- Do not include script tags or external JS.
+- Do not wrap with UPDATE_DOCUMENT/APPEND_CONTENT/REPLACE_TEXT.`;
+
+        const response = await generateContent(componentPrompt, selectedModel);
+        const generatedHtml = sanitizeAiSnippet(response);
+        if (!generatedHtml) {
+          showCustomAlert('AI returned empty component');
+          return;
+        }
+
+        const preview = await showAiApplyPreviewDialog({
+          title: 'Review AI component',
+          description: 'AI generated a component. Edit it, then insert.',
+          initialContent: generatedHtml,
+          insertLabel: 'Insert Component',
+          selectedModel
+        });
+        if (!preview.applied) return;
+
+        const inserted = await insertAiGeneratedComponent(editable, selectionMemory, preview.content);
+        if (inserted) {
+          ensureResizableImages(editable);
+          triggerEditableInput(editable);
+        }
+      } catch (error) {
+        console.error('Failed to generate AI component:', error);
+        showCustomAlert('Failed to generate component');
+      } finally {
+        setButtonLoading(btn, false);
+      }
+    }
+  });
+
+  toolbarEl.addEventListener('change', (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    closeToolbarMenus(toolbarEl);
+
+    const selectAction = target.dataset?.editorSelect;
+    if (selectAction) {
+      if (selectAction === 'font-family') {
+        executeEditorCommand(editable, selectionMemory, 'fontName', target.value);
+      } else if (selectAction === 'font-size') {
+        applyFontSizeToEditable(editable, selectionMemory, target.value);
+      } else if (selectAction === 'alignment') {
+        executeEditorCommand(editable, selectionMemory, target.value);
+      } else if (selectAction === 'line-spacing') {
+        applyLineSpacingToEditable(editable, selectionMemory, target.value);
+      } else if (selectAction === 'paragraph-style') {
+        const tag = String(target.value || 'p').toLowerCase();
+        executeEditorCommand(editable, selectionMemory, 'formatBlock', `<${tag}>`);
+      }
+      return;
+    }
+
+    const inputAction = target.dataset?.editorInput;
+    if (inputAction === 'fore-color') {
+      executeEditorCommand(editable, selectionMemory, 'foreColor', target.value);
+    } else if (inputAction === 'highlight-color') {
+      const applied = executeEditorCommand(editable, selectionMemory, 'hiliteColor', target.value);
+      if (!applied) {
+        executeEditorCommand(editable, selectionMemory, 'backColor', target.value);
+      }
+    }
+  });
+}
+
+function sanitizeAiSnippet(rawSnippet = '') {
+  return String(rawSnippet ?? '')
+    .replace(/^```(?:html|text)?/i, '')
+    .replace(/```$/i, '')
+    .replace(/<\/?html>/gi, '')
+    .replace(/<\/?body>/gi, '')
+    .replace(/<UPDATE_DOCUMENT>|<\/UPDATE_DOCUMENT>/gi, '')
+    .replace(/<APPEND_CONTENT>|<\/APPEND_CONTENT>/gi, '')
+    .replace(/<REPLACE_TEXT[^>]*>|<\/REPLACE_TEXT>/gi, '')
+    .trim();
+}
+
+function createAiChangeBatchId() {
+  return `ai-change-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function annotateHtmlForAiBatch(rawHtml, batchId) {
+  const html = sanitizeAiSnippet(rawHtml);
+  if (!html) return '';
+
+  const template = document.createElement('template');
+  template.innerHTML = html;
+  const nodes = Array.from(template.content.childNodes);
+
+  nodes.forEach((node) => {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      node.classList.add('ai-change-mark');
+      node.setAttribute('data-ai-change-batch', batchId);
+      node.setAttribute('data-ai-change-wrapper', 'false');
+      return;
+    }
+
+    if (node.nodeType === Node.TEXT_NODE && String(node.nodeValue || '').trim()) {
+      const wrapper = document.createElement('span');
+      wrapper.className = 'ai-change-mark';
+      wrapper.setAttribute('data-ai-change-batch', batchId);
+      wrapper.setAttribute('data-ai-change-wrapper', 'true');
+      wrapper.textContent = node.nodeValue;
+      node.replaceWith(wrapper);
+    }
+  });
+
+  return template.innerHTML;
+}
+
+function markEditorContentForAiBatch(editor, batchId) {
+  if (!editor || !batchId) return;
+  const nodes = Array.from(editor.childNodes);
+  if (nodes.length === 0) return;
+
+  nodes.forEach((node) => {
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      node.classList.add('ai-change-mark');
+      node.setAttribute('data-ai-change-batch', batchId);
+      node.setAttribute('data-ai-change-wrapper', 'false');
+      return;
+    }
+
+    if (node.nodeType === Node.TEXT_NODE && String(node.nodeValue || '').trim()) {
+      const wrapper = document.createElement('span');
+      wrapper.className = 'ai-change-mark';
+      wrapper.setAttribute('data-ai-change-batch', batchId);
+      wrapper.setAttribute('data-ai-change-wrapper', 'true');
+      wrapper.textContent = node.nodeValue;
+      node.replaceWith(wrapper);
+    }
+  });
+}
+
+function removeAiChangeMarkers(batchId = null) {
+  const editor = document.getElementById('editor');
+  if (!editor) return;
+
+  const selector = batchId
+    ? `[data-ai-change-batch="${batchId}"]`
+    : '[data-ai-change-batch]';
+  const markers = Array.from(editor.querySelectorAll(selector));
+
+  markers.forEach((marker) => {
+    const isWrapper = marker.getAttribute('data-ai-change-wrapper') === 'true';
+    marker.classList.remove('ai-change-mark');
+    marker.removeAttribute('data-ai-change-batch');
+    marker.removeAttribute('data-ai-change-wrapper');
+
+    if (!isWrapper || !marker.parentNode) return;
+    while (marker.firstChild) {
+      marker.parentNode.insertBefore(marker.firstChild, marker);
+    }
+    marker.parentNode.removeChild(marker);
+  });
+}
+
+function clearAiChangeControlLayer() {
+  if (aiChangeControlLayer && aiChangeControlLayer.parentNode) {
+    aiChangeControlLayer.parentNode.removeChild(aiChangeControlLayer);
+  }
+  aiChangeControlLayer = null;
+}
+
+function getAiChangeControlLayer() {
+  const editorArea = document.querySelector('.editor-area');
+  if (!editorArea) return null;
+
+  if (aiChangeControlLayer && editorArea.contains(aiChangeControlLayer)) {
+    return aiChangeControlLayer;
+  }
+
+  aiChangeControlLayer = document.createElement('div');
+  aiChangeControlLayer.id = 'aiChangeControlLayer';
+  aiChangeControlLayer.className = 'ai-change-control-layer';
+
+  aiChangeControlLayer.addEventListener('click', async (event) => {
+    const actionBtn = event.target.closest('[data-ai-change-action]');
+    if (!actionBtn) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    try {
+      const action = actionBtn.dataset.aiChangeAction;
+      if (action === 'save') {
+        await finalizeAiChangeBatch('save');
+      } else if (action === 'revert') {
+        await finalizeAiChangeBatch('revert');
+      }
+    } catch (error) {
+      console.error('Failed to finalize AI change batch:', error);
+      showCustomAlert('Could not apply that action');
+    }
+  });
+
+  editorArea.appendChild(aiChangeControlLayer);
+  return aiChangeControlLayer;
+}
+
+function renderAiChangeControl() {
+  aiChangeControlRaf = null;
+
+  if (!pendingAiChangeBatch?.id) {
+    clearAiChangeControlLayer();
+    return;
+  }
+
+  const editor = document.getElementById('editor');
+  const layer = getAiChangeControlLayer();
+  const editorArea = document.querySelector('.editor-area');
+  if (!editor || !layer || !editorArea) return;
+
+  const marker = editor.querySelector(`[data-ai-change-batch="${pendingAiChangeBatch.id}"]`);
+  if (!marker) {
+    clearAiChangeControlLayer();
+    return;
+  }
+
+  const markerRect = marker.getBoundingClientRect();
+  const areaRect = editorArea.getBoundingClientRect();
+  const scrollTop = editorArea.scrollTop || 0;
+  const scrollLeft = editorArea.scrollLeft || 0;
+
+  const card = document.createElement('div');
+  card.className = 'ai-change-control-card';
+  card.innerHTML = `
+    <div class="ai-change-control-title">
+      <i class="iconoir-sparks"></i>
+      <span>AI edits pending</span>
+    </div>
+    <div class="ai-change-control-actions">
+      <button type="button" class="ai-change-control-btn revert" data-ai-change-action="revert">
+        <i class="iconoir-undo"></i>
+        <span>Revert all</span>
+      </button>
+      <button type="button" class="ai-change-control-btn save" data-ai-change-action="save">
+        <i class="iconoir-check"></i>
+        <span>Save all</span>
+      </button>
+    </div>
+  `;
+
+  layer.innerHTML = '';
+  layer.appendChild(card);
+
+  const cardWidth = card.offsetWidth || 236;
+  const cardHeight = card.offsetHeight || 90;
+  const desiredLeft = markerRect.right - areaRect.left + scrollLeft + 12;
+  const desiredTop = markerRect.top - areaRect.top + scrollTop - 8;
+  const maxLeft = Math.max(8, editorArea.scrollWidth - cardWidth - 8);
+  const maxTop = Math.max(8, editorArea.scrollHeight - cardHeight - 8);
+
+  const left = Math.max(8, Math.min(desiredLeft, maxLeft));
+  const top = Math.max(8, Math.min(desiredTop, maxTop));
+
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+}
+
+function scheduleAiChangeControlRender() {
+  if (aiChangeControlRaf) return;
+  aiChangeControlRaf = requestAnimationFrame(renderAiChangeControl);
+}
+
+function bindAiChangeControlResize() {
+  if (aiChangeResizeBound) return;
+  aiChangeResizeBound = true;
+  window.addEventListener('resize', scheduleAiChangeControlRender);
+}
+
+function beginAiChangeBatch(beforeHtml, batchId) {
+  pendingAiChangeBatch = {
+    id: String(batchId || ''),
+    beforeHtml: String(beforeHtml ?? '')
+  };
+  scheduleAiChangeControlRender();
+}
+
+async function finalizeAiChangeBatch(mode = 'save', options = {}) {
+  const { silent = false } = options;
+  if (!pendingAiChangeBatch) return;
+
+  const editor = document.getElementById('editor');
+  if (!editor) {
+    pendingAiChangeBatch = null;
+    clearAiChangeControlLayer();
+    return;
+  }
+
+  if (mode === 'revert') {
+    editor.innerHTML = pendingAiChangeBatch.beforeHtml;
+    ensureResizableImages(editor);
+    pendingAiChangeBatch = null;
+    clearAiChangeControlLayer();
+    await updateCurrentDoc({ content: editor.innerHTML });
+    if (collaborationManager) collaborationManager.sendTextUpdate(editor.innerHTML);
+    scheduleCommentHighlightsRender();
+    if (!silent) showCustomAlert('AI changes reverted');
+    return;
+  }
+
+  removeAiChangeMarkers(pendingAiChangeBatch.id);
+  pendingAiChangeBatch = null;
+  clearAiChangeControlLayer();
+  await updateCurrentDoc({ content: editor.innerHTML });
+  if (collaborationManager) collaborationManager.sendTextUpdate(editor.innerHTML);
+  scheduleCommentHighlightsRender();
+  if (!silent) showCustomAlert('AI changes saved');
+}
+
+async function showAiApplyPreviewDialog({
+  title = 'Review AI draft',
+  description = 'Review and edit this before inserting.',
+  initialContent = '',
+  insertLabel = 'Insert',
+  selectedModel = 'gemini-2.5-flash'
+} = {}) {
+  const baseContent = sanitizeAiSnippet(initialContent);
+
+  const result = await showCustomInteractionDialog({
+    title,
+    message: description,
+    icon: 'iconoir-sparks',
+    cancelValue: { applied: false, content: baseContent },
+    allowBackdropClose: true,
+    buildControls: ({ controlsEl, closeDialog }) => {
+      const dialog = controlsEl.closest('.custom-alert-dialog');
+      dialog?.classList.add('custom-alert-dialog-preview');
+
+      const previewToolbarWrap = document.createElement('div');
+      const previewToolbarId = `previewToolbar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      previewToolbarWrap.innerHTML = getFormattingToolbarMarkup({
+        toolbarId: previewToolbarId,
+        extraClass: 'preview-format-toolbar'
+      });
+      controlsEl.appendChild(previewToolbarWrap.firstElementChild);
+
+      const previewEditor = document.createElement('div');
+      previewEditor.className = 'custom-alert-preview-editor';
+      previewEditor.contentEditable = 'true';
+      previewEditor.spellcheck = true;
+      previewEditor.innerHTML = baseContent || '<p><br></p>';
+      controlsEl.appendChild(previewEditor);
+
+      setupRichFormattingToolbar(document.getElementById(previewToolbarId), previewEditor, { docId: currentDocId });
+
+      const refineRow = document.createElement('div');
+      refineRow.className = 'custom-alert-dialog-inline';
+
+      const refineInput = document.createElement('input');
+      refineInput.type = 'text';
+      refineInput.className = 'custom-alert-dialog-input';
+      refineInput.placeholder = 'Optional: ask AI to adjust this draft...';
+
+      const refineBtn = createCustomDialogButton('Refine with AI', 'ghost');
+      refineBtn.classList.add('custom-alert-dialog-btn-with-icon');
+      refineBtn.innerHTML = '<i class="iconoir-sparks"></i><span>Refine with AI</span>';
+
+      refineBtn.addEventListener('click', async () => {
+        const instruction = refineInput.value.trim();
+        const currentDraft = previewEditor.innerHTML.trim();
+
+        if (!currentDraft) {
+          showCustomAlert('There is no draft content to refine');
+          return;
+        }
+        if (!instruction) {
+          showCustomAlert('Add a short instruction for AI refine');
+          refineInput.focus();
+          return;
+        }
+
+        setButtonLoading(refineBtn, true, 'Refining...');
+        try {
+          const refinePrompt = `You are refining an HTML snippet for a document editor.
+Current snippet:
+"""${currentDraft}"""
+
+User instruction:
+"${instruction}"
+
+Rules:
+- Return ONLY the updated snippet.
+- Keep all existing intent unless explicitly changed by the instruction.
+- Keep it valid HTML when HTML is used.`;
+
+          const refined = await generateContent(refinePrompt, selectedModel);
+          const cleaned = sanitizeAiSnippet(refined);
+          if (!cleaned) {
+            showCustomAlert('AI returned an empty refine result');
+            return;
+          }
+          previewEditor.innerHTML = cleaned;
+        } catch (error) {
+          console.error('Failed to refine AI draft:', error);
+          showCustomAlert('Failed to refine draft');
+        } finally {
+          setButtonLoading(refineBtn, false);
+        }
+      });
+
+      refineInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          refineBtn.click();
+        }
+      });
+
+      refineRow.append(refineInput, refineBtn);
+      controlsEl.appendChild(refineRow);
+
+      const actions = document.createElement('div');
+      actions.className = 'custom-alert-dialog-actions';
+
+      const cancelBtn = createCustomDialogButton('Cancel', 'secondary');
+      const insertBtn = createCustomDialogButton(insertLabel, 'primary');
+      insertBtn.classList.add('custom-alert-dialog-btn-with-icon');
+      insertBtn.innerHTML = '<i class="iconoir-check"></i><span></span>';
+      insertBtn.querySelector('span').textContent = insertLabel;
+      insertBtn.dataset.autofocus = 'true';
+
+      cancelBtn.addEventListener('click', () => closeDialog({ applied: false, content: previewEditor.innerHTML }));
+      insertBtn.addEventListener('click', () => {
+        const finalContent = sanitizeAiSnippet(previewEditor.innerHTML);
+        if (!finalContent) {
+          showCustomAlert('Content is empty');
+          previewEditor.focus();
+          return;
+        }
+        closeDialog({ applied: true, content: finalContent });
+      });
+
+      actions.append(cancelBtn, insertBtn);
+      controlsEl.appendChild(actions);
+
+      requestAnimationFrame(() => previewEditor.focus());
+    }
+  });
+
+  return result || { applied: false, content: baseContent };
+}
+
+async function copyTextToClipboard(text) {
+  const safeText = String(text || '');
+  if (!safeText) return false;
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(safeText);
+      return true;
+    }
+  } catch (error) {
+    console.warn('Clipboard copy failed:', error);
+  }
+
+  return false;
+}
+
+function showCustomShareLinkDialog(shareUrl) {
+  const safeUrl = String(shareUrl || '').trim();
+
+  return showCustomInteractionDialog({
+    title: 'Document is now public',
+    message: 'Share this URL with others:',
+    icon: 'iconoir-info-circle',
+    cancelValue: null,
+    allowBackdropClose: true,
+    buildControls: ({ controlsEl, closeDialog }) => {
+      const urlInput = document.createElement('input');
+      urlInput.type = 'text';
+      urlInput.className = 'custom-alert-dialog-input';
+      urlInput.value = safeUrl;
+      urlInput.readOnly = true;
+      controlsEl.appendChild(urlInput);
+
+      const actions = document.createElement('div');
+      actions.className = 'custom-alert-dialog-actions';
+
+      const closeBtn = createCustomDialogButton('Close', 'secondary');
+      const copyBtn = createCustomDialogButton('Copy Link', 'primary');
+      copyBtn.dataset.autofocus = 'true';
+
+      closeBtn.addEventListener('click', () => closeDialog(null));
+      copyBtn.addEventListener('click', async () => {
+        const copied = await copyTextToClipboard(safeUrl);
+        if (copied) {
+          showCustomAlert('Link copied');
+          closeDialog(safeUrl);
+          return;
+        }
+        urlInput.focus();
+        urlInput.select();
+        showCustomAlert('Copy failed. Press Cmd/Ctrl+C.');
+      });
+
+      urlInput.addEventListener('focus', () => urlInput.select());
+      urlInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          copyBtn.click();
+        }
+      });
+
+      actions.append(closeBtn, copyBtn);
+      controlsEl.appendChild(actions);
+    }
+  });
 }
 
 window.showCustomAlert = showCustomAlert;
@@ -2963,6 +4711,36 @@ function setupEditorListeners() {
     }
   }
 
+  const handleToolbarMenuAction = async (menuAction) => {
+    if (menuAction === 'file-save') {
+      await updateCurrentDoc({ content: editor.innerHTML });
+      if (collaborationManager) {
+        collaborationManager.sendTextUpdate(editor.innerHTML);
+      }
+      showCustomAlert('Document saved');
+      return;
+    }
+
+    if (menuAction === 'file-download-html') {
+      await downloadDocument('html');
+      return;
+    }
+
+    if (menuAction === 'file-download-md') {
+      await downloadDocument('md');
+      return;
+    }
+
+    if (menuAction === 'file-download-pdf') {
+      await downloadDocument('pdf');
+      return;
+    }
+
+    if (menuAction === 'file-download-docx') {
+      await downloadDocument('docx');
+    }
+  };
+
 
   // Model selectors
   const aiModelSelector = document.getElementById('aiModelSelector');
@@ -3202,7 +4980,7 @@ function setupEditorListeners() {
       // Show appropriate message
       if (newPublicStatus) {
         const shareUrl = `${window.location.origin}?doc=${currentDocId}`;
-        prompt('Document is now public! Share this URL:', shareUrl);
+        await showCustomShareLinkDialog(shareUrl);
       } else {
         alert('Document is now private');
       }
@@ -3303,12 +5081,21 @@ function setupEditorListeners() {
     updateCurrentDoc({ title: e.target.value });
   });
 
+  bindAiChangeControlResize();
+  const editorArea = document.querySelector('.editor-area');
+  if (editorArea) {
+    editorArea.addEventListener('scroll', scheduleAiChangeControlRender);
+  }
+
   editor.addEventListener('input', (e) => {
-    updateCurrentDoc({ content: editor.innerHTML });
+    if (!pendingAiChangeBatch) {
+      updateCurrentDoc({ content: editor.innerHTML });
+    }
     scheduleCommentHighlightsRender();
+    scheduleAiChangeControlRender();
 
     // Broadcast changes
-    if (collaborationManager) {
+    if (!pendingAiChangeBatch && collaborationManager) {
       collaborationManager.sendTextUpdate(editor.innerHTML);
     }
 
@@ -3316,47 +5103,10 @@ function setupEditorListeners() {
     handleMarkdownShortcuts(editor, e);
   });
 
-  // Undo/Redo
-  const undoBtn = document.getElementById('undoBtn');
-  const redoBtn = document.getElementById('redoBtn');
-
-  if (undoBtn) {
-    undoBtn.addEventListener('click', () => {
-      document.execCommand('undo', false, null);
-    });
-  }
-
-  if (redoBtn) {
-    redoBtn.addEventListener('click', () => {
-      document.execCommand('redo', false, null);
-    });
-  }
-
-  // Font family & size
-  const fontFamily = document.getElementById('fontFamily');
-  const fontSize = document.getElementById('fontSize');
-
-  fontFamily.addEventListener('change', () => {
-    document.execCommand('fontName', false, fontFamily.value);
-  });
-
-  fontSize.addEventListener('change', () => {
-    const val = fontSize.value;
-    document.execCommand('fontSize', false, '7');
-    const fontElements = document.querySelectorAll('font[size="7"]');
-    fontElements.forEach(el => {
-      el.removeAttribute('size');
-      el.style.fontSize = val;
-    });
-  });
-
-  // Toolbar
-  document.querySelectorAll('.tool-btn').forEach(btn => {
-    if (btn.id === 'exportBtn') return; // Skip export button
-    btn.addEventListener('click', () => {
-      document.execCommand(btn.dataset.cmd, false, null);
-      editor.focus();
-    });
+  const editorToolbar = document.getElementById('editorToolbar');
+  setupRichFormattingToolbar(editorToolbar, editor, {
+    docId: currentDocId,
+    onMenuAction: handleToolbarMenuAction
   });
 
   // AI Chat
@@ -3509,36 +5259,70 @@ function setupEditorListeners() {
 
       let processedResponse = response;
       let docUpdated = false;
+      let fullUpdateApplied = false;
+      let aiBatchId = '';
+      let aiBatchBeforeHtml = '';
+
+      const ensureAiBatch = () => {
+        if (!aiBatchId) aiBatchId = createAiChangeBatchId();
+        if (!aiBatchBeforeHtml) aiBatchBeforeHtml = editor.innerHTML;
+        return aiBatchId;
+      };
+
+      if (pendingAiChangeBatch) {
+        await finalizeAiChangeBatch('save', { silent: true });
+      }
 
       // 1. Handle Full Update
       const updateMatch = response.match(/<UPDATE_DOCUMENT>([\s\S]*?)<\/UPDATE_DOCUMENT>/);
       if (updateMatch) {
-        const newContent = updateMatch[1];
-        const shouldApplyFullUpdate = confirm('AI wants to replace the entire document content. Apply this change?');
-        if (shouldApplyFullUpdate) {
-          editor.innerHTML = newContent;
-          updateCurrentDoc({ content: newContent });
-          processedResponse = processedResponse.replace(/<UPDATE_DOCUMENT>[\s\S]*?<\/UPDATE_DOCUMENT>/, "I've replaced the document content.");
+        const preview = await showAiApplyPreviewDialog({
+          title: 'Review full document update',
+          description: 'AI drafted a full replacement. Edit it as needed, then insert.',
+          initialContent: updateMatch[1],
+          insertLabel: 'Insert',
+          selectedModel
+        });
+
+        if (preview.applied) {
+          ensureAiBatch();
+          editor.innerHTML = sanitizeAiSnippet(preview.content);
+          fullUpdateApplied = true;
+          processedResponse = processedResponse.replace(/<UPDATE_DOCUMENT>[\s\S]*?<\/UPDATE_DOCUMENT>/, "I've inserted the full document update for your review.");
           docUpdated = true;
         } else {
-          processedResponse = processedResponse.replace(/<UPDATE_DOCUMENT>[\s\S]*?<\/UPDATE_DOCUMENT>/, "I drafted a full-document rewrite, but did not apply it.");
+          processedResponse = processedResponse.replace(/<UPDATE_DOCUMENT>[\s\S]*?<\/UPDATE_DOCUMENT>/, "I drafted a full-document rewrite, but did not insert it.");
         }
       }
 
       // 2. Handle Append
       const appendMatch = response.match(/<APPEND_CONTENT>([\s\S]*?)<\/APPEND_CONTENT>/);
       if (appendMatch) {
-        const contentToAppend = appendMatch[1];
-        editor.innerHTML += contentToAppend;
-        updateCurrentDoc({ content: editor.innerHTML });
-        processedResponse = processedResponse.replace(/<APPEND_CONTENT>[\s\S]*?<\/APPEND_CONTENT>/, "I've appended the text to the document.");
-        docUpdated = true;
+        const preview = await showAiApplyPreviewDialog({
+          title: 'Review appended content',
+          description: 'AI drafted text to append. Edit it if needed, then insert.',
+          initialContent: appendMatch[1],
+          insertLabel: 'Insert',
+          selectedModel
+        });
+
+        if (preview.applied) {
+          const batchId = ensureAiBatch();
+          const appendHtml = fullUpdateApplied
+            ? sanitizeAiSnippet(preview.content)
+            : annotateHtmlForAiBatch(preview.content, batchId);
+          editor.innerHTML += appendHtml;
+          processedResponse = processedResponse.replace(/<APPEND_CONTENT>[\s\S]*?<\/APPEND_CONTENT>/, "I've inserted the appended content for your review.");
+          docUpdated = true;
+        } else {
+          processedResponse = processedResponse.replace(/<APPEND_CONTENT>[\s\S]*?<\/APPEND_CONTENT>/, "I drafted appended content, but did not insert it.");
+        }
       }
 
       // 3. Handle Replace (Multiple occurrences)
       const replaceRegex = /<REPLACE_TEXT target="([^"]+)">([\s\S]*?)<\/REPLACE_TEXT>/g;
       const replaceOperations = [];
-      let replacementApplied = false;
+      let replacementAppliedCount = 0;
       let match;
       while ((match = replaceRegex.exec(response)) !== null) {
         replaceOperations.push({
@@ -3548,34 +5332,52 @@ function setupEditorListeners() {
       }
 
       if (replaceOperations.length > 0) {
-        const replaceLabel = replaceOperations.length === 1
-          ? 'AI wants to replace one section in the document. Apply this change?'
-          : `AI wants to replace ${replaceOperations.length} sections in the document. Apply these changes?`;
-        const shouldApplyReplacements = confirm(replaceLabel);
+        for (let index = 0; index < replaceOperations.length; index += 1) {
+          const { target, replacement } = replaceOperations[index];
+          if (!editor.innerHTML.includes(target)) continue;
 
-        if (shouldApplyReplacements) {
-          let replacedAny = false;
-          replaceOperations.forEach(({ target, replacement }) => {
-            if (editor.innerHTML.includes(target)) {
-              editor.innerHTML = editor.innerHTML.replace(target, replacement);
-              replacedAny = true;
-            }
+          const previewTarget = target.length > 180
+            ? `${target.slice(0, 180)}...`
+            : target;
+          const preview = await showAiApplyPreviewDialog({
+            title: `Review replacement ${index + 1}/${replaceOperations.length}`,
+            description: `AI wants to replace this text:\n"${previewTarget}"`,
+            initialContent: replacement,
+            insertLabel: 'Replace',
+            selectedModel
           });
-          if (replacedAny) {
-            updateCurrentDoc({ content: editor.innerHTML });
+
+          if (!preview.applied) continue;
+
+          const batchId = ensureAiBatch();
+          const nextReplacement = fullUpdateApplied
+            ? sanitizeAiSnippet(preview.content)
+            : annotateHtmlForAiBatch(preview.content, batchId);
+
+          if (editor.innerHTML.includes(target)) {
+            editor.innerHTML = editor.innerHTML.replace(target, nextReplacement);
+            replacementAppliedCount += 1;
             docUpdated = true;
-            replacementApplied = true;
           }
         }
       }
 
       // Clean up replace tags from chat response
       const replaceSummary = replaceOperations.length > 0
-        ? (replacementApplied
-          ? "I've updated that section."
+        ? (replacementAppliedCount > 0
+          ? `I've updated ${replacementAppliedCount} section${replacementAppliedCount > 1 ? 's' : ''}.`
           : "I suggested replacement edits, but did not apply them.")
         : "I've updated that section.";
       processedResponse = processedResponse.replace(/<REPLACE_TEXT[\s\S]*?<\/REPLACE_TEXT>/g, replaceSummary);
+
+      if (docUpdated && aiBatchId) {
+        if (fullUpdateApplied) {
+          markEditorContentForAiBatch(editor, aiBatchId);
+        }
+        beginAiChangeBatch(aiBatchBeforeHtml, aiBatchId);
+        scheduleCommentHighlightsRender();
+        showCustomAlert('AI changes highlighted. Use Save all or Revert all.');
+      }
 
       addAiMessage(processedResponse);
 
@@ -4274,164 +6076,161 @@ function submitAiQuestionReply(question, answer) {
   aiSend.click();
 }
 
-function addAiQuestionMessage(rawConfig = {}) {
-  const msgs = document.getElementById('aiMessages');
-  if (!msgs) return;
-
+function showAiQuestionDialog(rawConfig = {}) {
   const config = normalizeAiQuestionConfig(rawConfig);
-  const bubble = document.createElement('div');
-  bubble.className = 'ai-message ai ai-question';
 
-  const question = document.createElement('div');
-  question.className = 'ai-question-text';
-  question.textContent = config.question;
-  bubble.appendChild(question);
+  return showCustomInteractionDialog({
+    title: 'AI needs your input',
+    message: config.question,
+    icon: 'iconoir-info-circle',
+    cancelValue: '',
+    allowBackdropClose: true,
+    buildControls: ({ controlsEl, closeDialog }) => {
+      const submitAnswer = (answer) => {
+        const value = String(answer || '').trim();
+        if (!value) {
+          showCustomAlert('Please enter a reply');
+          return;
+        }
+        closeDialog(value);
+      };
 
-  const controls = document.createElement('div');
-  controls.className = 'ai-question-controls';
-  bubble.appendChild(controls);
+      if (config.type === 'buttons') {
+        const row = document.createElement('div');
+        row.className = 'custom-alert-dialog-choice-row';
 
-  const markAnswered = (answer) => {
-    const value = String(answer || '').trim();
-    if (!value || bubble.dataset.answered === 'true') return;
+        config.options.forEach((option, index) => {
+          const btn = createCustomDialogButton(option, 'choice');
+          if (index === 0) btn.dataset.autofocus = 'true';
+          btn.addEventListener('click', () => submitAnswer(option));
+          row.appendChild(btn);
+        });
 
-    bubble.dataset.answered = 'true';
-    bubble.classList.add('answered');
-    bubble.querySelectorAll('button, input, select').forEach((el) => {
-      el.disabled = true;
-    });
+        controlsEl.appendChild(row);
 
-    const note = document.createElement('div');
-    note.className = 'ai-question-note';
-    note.textContent = `You replied: ${value}`;
-    bubble.appendChild(note);
+        if (config.allowCustom) {
+          const customWrap = document.createElement('div');
+          customWrap.className = 'custom-alert-dialog-inline';
+          customWrap.style.display = 'none';
 
-    submitAiQuestionReply(config.question, value);
-  };
+          const customInput = document.createElement('input');
+          customInput.type = 'text';
+          customInput.className = 'custom-alert-dialog-input';
+          customInput.placeholder = config.placeholder;
 
-  if (config.type === 'buttons') {
-    const row = document.createElement('div');
-    row.className = 'ai-question-button-row';
-    config.options.forEach((option) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'ai-question-btn';
-      btn.textContent = option;
-      btn.addEventListener('click', () => markAnswered(option));
-      row.appendChild(btn);
-    });
-    controls.appendChild(row);
+          const customSubmit = createCustomDialogButton(config.submitLabel, 'primary');
+          customSubmit.addEventListener('click', () => submitAnswer(customInput.value));
+          customInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              submitAnswer(customInput.value);
+            }
+          });
 
-    if (config.allowCustom) {
-      const customWrap = document.createElement('div');
-      customWrap.className = 'ai-question-custom';
-      customWrap.style.display = 'none';
+          customWrap.append(customInput, customSubmit);
+          controlsEl.appendChild(customWrap);
 
-      const customInput = document.createElement('input');
-      customInput.type = 'text';
-      customInput.className = 'ai-question-input';
-      customInput.placeholder = config.placeholder;
+          const customToggle = createCustomDialogButton('Custom...', 'ghost');
+          customToggle.addEventListener('click', () => {
+            customWrap.style.display = 'flex';
+            customInput.focus();
+          });
+          controlsEl.appendChild(customToggle);
+        }
 
-      const customSubmit = document.createElement('button');
-      customSubmit.type = 'button';
-      customSubmit.className = 'ai-question-submit';
-      customSubmit.textContent = config.submitLabel;
-      customSubmit.addEventListener('click', () => markAnswered(customInput.value));
-      customInput.addEventListener('keydown', (event) => {
+        return;
+      }
+
+      if (config.type === 'select') {
+        const select = document.createElement('select');
+        select.className = 'custom-alert-dialog-select';
+
+        config.options.forEach((option) => {
+          const optionEl = document.createElement('option');
+          optionEl.value = option;
+          optionEl.textContent = option;
+          select.appendChild(optionEl);
+        });
+
+        if (config.allowCustom) {
+          const customOption = document.createElement('option');
+          customOption.value = '__custom__';
+          customOption.textContent = 'Custom...';
+          select.appendChild(customOption);
+        }
+
+        const customInput = document.createElement('input');
+        customInput.type = 'text';
+        customInput.className = 'custom-alert-dialog-input';
+        customInput.placeholder = config.placeholder;
+        customInput.style.display = 'none';
+
+        select.addEventListener('change', () => {
+          if (select.value === '__custom__') {
+            customInput.style.display = 'block';
+            customInput.focus();
+          } else {
+            customInput.style.display = 'none';
+          }
+        });
+
+        customInput.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            const value = select.value === '__custom__' ? customInput.value : select.value;
+            submitAnswer(value);
+          }
+        });
+
+        const actions = document.createElement('div');
+        actions.className = 'custom-alert-dialog-actions';
+        const cancelBtn = createCustomDialogButton('Cancel', 'secondary');
+        const submitBtn = createCustomDialogButton(config.submitLabel, 'primary');
+        submitBtn.dataset.autofocus = 'true';
+
+        cancelBtn.addEventListener('click', () => closeDialog(''));
+        submitBtn.addEventListener('click', () => {
+          const value = select.value === '__custom__' ? customInput.value : select.value;
+          submitAnswer(value);
+        });
+
+        actions.append(cancelBtn, submitBtn);
+        controlsEl.append(select, customInput, actions);
+        return;
+      }
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'custom-alert-dialog-input';
+      input.placeholder = config.placeholder;
+      input.dataset.autofocus = 'true';
+
+      input.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
           event.preventDefault();
-          markAnswered(customInput.value);
+          submitAnswer(input.value);
         }
       });
 
-      customWrap.appendChild(customInput);
-      customWrap.appendChild(customSubmit);
-      controls.appendChild(customWrap);
+      const actions = document.createElement('div');
+      actions.className = 'custom-alert-dialog-actions';
+      const cancelBtn = createCustomDialogButton('Cancel', 'secondary');
+      const submitBtn = createCustomDialogButton(config.submitLabel, 'primary');
 
-      const customToggle = document.createElement('button');
-      customToggle.type = 'button';
-      customToggle.className = 'ai-question-ghost';
-      customToggle.textContent = 'Custom...';
-      customToggle.addEventListener('click', () => {
-        customWrap.style.display = 'flex';
-        customInput.focus();
-      });
-      controls.appendChild(customToggle);
+      cancelBtn.addEventListener('click', () => closeDialog(''));
+      submitBtn.addEventListener('click', () => submitAnswer(input.value));
+
+      actions.append(cancelBtn, submitBtn);
+      controlsEl.append(input, actions);
     }
-  } else if (config.type === 'select') {
-    const select = document.createElement('select');
-    select.className = 'ai-question-select';
-    config.options.forEach((option) => {
-      const optionEl = document.createElement('option');
-      optionEl.value = option;
-      optionEl.textContent = option;
-      select.appendChild(optionEl);
-    });
-    if (config.allowCustom) {
-      const customOption = document.createElement('option');
-      customOption.value = '__custom__';
-      customOption.textContent = 'Custom...';
-      select.appendChild(customOption);
-    }
+  });
+}
 
-    const customInput = document.createElement('input');
-    customInput.type = 'text';
-    customInput.className = 'ai-question-input';
-    customInput.placeholder = config.placeholder;
-    customInput.style.display = 'none';
-
-    const submit = document.createElement('button');
-    submit.type = 'button';
-    submit.className = 'ai-question-submit';
-    submit.textContent = config.submitLabel;
-    submit.addEventListener('click', () => {
-      const value = select.value === '__custom__' ? customInput.value : select.value;
-      markAnswered(value);
-    });
-
-    select.addEventListener('change', () => {
-      if (select.value === '__custom__') {
-        customInput.style.display = 'block';
-        customInput.focus();
-      } else {
-        customInput.style.display = 'none';
-      }
-    });
-
-    customInput.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        markAnswered(customInput.value);
-      }
-    });
-
-    controls.appendChild(select);
-    controls.appendChild(customInput);
-    controls.appendChild(submit);
-  } else {
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'ai-question-input';
-    input.placeholder = config.placeholder;
-
-    const submit = document.createElement('button');
-    submit.type = 'button';
-    submit.className = 'ai-question-submit';
-    submit.textContent = config.submitLabel;
-    submit.addEventListener('click', () => markAnswered(input.value));
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        markAnswered(input.value);
-      }
-    });
-
-    controls.appendChild(input);
-    controls.appendChild(submit);
-  }
-
-  msgs.appendChild(bubble);
-  msgs.scrollTop = msgs.scrollHeight;
+async function addAiQuestionMessage(rawConfig = {}) {
+  const config = normalizeAiQuestionConfig(rawConfig);
+  const answer = await showAiQuestionDialog(config);
+  if (!answer) return;
+  submitAiQuestionReply(config.question, answer);
 }
 
 function addAiMessage(text, sender = 'ai') {
@@ -5548,19 +7347,52 @@ Rules:
       return;
     }
 
+    const preview = await showAiApplyPreviewDialog({
+      title: 'Review AI fix',
+      description: 'Edit this fix if needed, then apply it to the selected text.',
+      initialContent: revisedText,
+      insertLabel: 'Apply Fix',
+      selectedModel
+    });
+    if (!preview.applied) return;
+
     const editor = document.getElementById('editor');
     if (!editor) return;
 
+    if (pendingAiChangeBatch) {
+      await finalizeAiChangeBatch('save', { silent: true });
+    }
+
+    const aiBatchId = createAiChangeBatchId();
+    const beforeHtml = editor.innerHTML;
+    const replacementHtml = annotateHtmlForAiBatch(preview.content, aiBatchId);
+
+    const range = anchor.range.cloneRange();
+    range.deleteContents();
+    const temp = document.createElement('div');
+    temp.innerHTML = replacementHtml;
+    const fragment = document.createDocumentFragment();
+    let node;
+    let lastNode = null;
+    while ((node = temp.firstChild)) {
+      lastNode = fragment.appendChild(node);
+    }
+    range.insertNode(fragment);
+
     const selection = window.getSelection();
     selection.removeAllRanges();
-    selection.addRange(anchor.range.cloneRange());
-    document.execCommand('insertText', false, revisedText);
+    if (lastNode) {
+      const cursorRange = document.createRange();
+      cursorRange.setStartAfter(lastNode);
+      cursorRange.collapse(true);
+      selection.addRange(cursorRange);
+    }
 
-    updateCurrentDoc({ content: editor.innerHTML });
-    if (collaborationManager) collaborationManager.sendTextUpdate(editor.innerHTML);
-
+    beginAiChangeBatch(beforeHtml, aiBatchId);
+    scheduleAiChangeControlRender();
+    scheduleCommentHighlightsRender();
     activeCommentId = commentId;
-    alert('AI fix applied');
+    alert('AI fix inserted and highlighted');
     await loadComments({ focusCommentId: commentId });
   } catch (error) {
     console.error('Failed to apply AI fix:', error);
@@ -5735,7 +7567,11 @@ async function loadComments({ focusCommentId = null } = {}) {
 }
 
 window.deleteCommentAction = async (id) => {
-  if (!confirm('Delete this comment?')) return;
+  if (!await showCustomConfirm('Delete this comment?', {
+    title: 'Delete comment',
+    confirmLabel: 'Delete',
+    cancelLabel: 'Keep'
+  })) return;
   const { error } = await deleteComment(id);
   if (error) alert('Failed to delete comment');
   else {
@@ -5806,7 +7642,14 @@ async function loadSharePermissions() {
 }
 
 window.updateRoleAction = async (email, newRole) => {
-  if (!confirm(`Change ${email} to ${newRole}?`)) return loadSharePermissions(); // Revert if cancelled
+  if (!await showCustomConfirm(`Change ${email} to ${newRole}?`, {
+    title: 'Update collaborator role',
+    confirmLabel: 'Change',
+    cancelLabel: 'Cancel'
+  })) {
+    await loadSharePermissions(); // Revert if cancelled
+    return;
+  }
 
   try {
     const { error } = await shareDocument(currentDocId, email, newRole);

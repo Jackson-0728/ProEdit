@@ -407,3 +407,47 @@ export function subscribeToDocumentChat(docId, { onInsert, onDelete, onError } =
         supabase.removeChannel(channel);
     };
 }
+
+// --- STORAGE (EDITOR MEDIA) ---
+
+export async function uploadEditorAsset(file, options = {}) {
+    const { docId = null, folder = 'media' } = options;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) {
+        return { data: null, error: new Error('Not authenticated') };
+    }
+    if (!(file instanceof File)) {
+        return { data: null, error: new Error('No valid file selected') };
+    }
+
+    const bucket = import.meta.env.VITE_SUPABASE_ASSETS_BUCKET || 'assets';
+    const safeName = String(file.name || 'upload.bin')
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]/g, '-')
+        .replace(/-+/g, '-');
+    const random = Math.random().toString(36).slice(2, 8);
+    const path = `${folder}/${session.user.id}/${docId || 'general'}/${Date.now()}-${random}-${safeName}`;
+
+    const { data, error } = await supabase
+        .storage
+        .from(bucket)
+        .upload(path, file, {
+            contentType: file.type || undefined,
+            cacheControl: '3600',
+            upsert: false
+        });
+
+    if (error) {
+        return { data: null, error };
+    }
+
+    const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(path);
+    return {
+        data: {
+            bucket,
+            path: data?.path || path,
+            publicUrl: publicData?.publicUrl || ''
+        },
+        error: null
+    };
+}
