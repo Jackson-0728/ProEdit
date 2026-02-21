@@ -39,6 +39,77 @@ body {
     flex-direction: column;
 }
 
+.beta-top-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 4200;
+    height: 42px;
+    padding: 0 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    background: linear-gradient(90deg, #111827, #1f2937);
+    border-bottom: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.beta-top-banner-text {
+    color: #e5e7eb;
+    font-size: 0.83rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+
+.beta-top-banner-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 26px;
+    padding: 0 0.65rem;
+    border-radius: 999px;
+    border: 1px solid #93c5fd;
+    background: #dbeafe;
+    color: #1e3a8a;
+    font-size: 0.77rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.beta-top-banner-link:hover {
+    background: #bfdbfe;
+    border-color: #60a5fa;
+    transform: translateY(-1px);
+}
+
+body.has-beta-top-banner #app {
+    height: calc(100vh - 42px);
+    margin-top: 42px;
+}
+
+@media (max-width: 640px) {
+    .beta-top-banner {
+        height: 44px;
+        justify-content: space-between;
+        padding: 0 0.55rem;
+    }
+
+    .beta-top-banner-text {
+        font-size: 0.75rem;
+        max-width: 70%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    body.has-beta-top-banner #app {
+        height: calc(100vh - 44px);
+        margin-top: 44px;
+    }
+}
+
 .global-loader-overlay {
     position: fixed;
     inset: 0;
@@ -1922,7 +1993,26 @@ body.modal-dragging {
     display: flex;
     gap: 1rem;
     justify-content: center;
-    margin-bottom: 5rem;
+    margin-bottom: 1.4rem;
+}
+
+.hero-product-hunt {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 3.8rem;
+}
+
+.hero-product-hunt a {
+    display: inline-flex;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.hero-product-hunt img {
+    display: block;
+    width: 250px;
+    max-width: 100%;
+    height: auto;
 }
 
 .cta-btn {
@@ -1987,6 +2077,16 @@ body.modal-dragging {
 .feature-card p {
     color: var(--text-muted);
     line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+    .hero-product-hunt {
+        margin-bottom: 2rem;
+    }
+
+    .hero-product-hunt img {
+        width: min(250px, 100%);
+    }
 }
 
 /* Help Chat Popup */

@@ -24,6 +24,7 @@ let commentHighlightResizeHandler = null;
 let slashTriggerRange = null;
 let globalLoadingDepth = 0;
 let globalLoaderEl = null;
+let betaTopBannerEl = null;
 let activeTableContext = null;
 let tableContextMenuEl = null;
 let tableContextMenuBound = false;
@@ -34,6 +35,7 @@ const app = document.querySelector('#app');
 const RESET_PASSWORD_PATH = '/reset-password';
 const LOGIN_PATH = '/login';
 const SIGNUP_PATH = '/signup';
+const BETA_TESTER_URL = 'https://betatestersapp-proedit.vercel.app/';
 const TEMPLATE_ORDER = ['blank', 'meeting', 'proposal', 'report', 'letter', 'resume', 'blog'];
 const EDITOR_FONT_FAMILIES = ['Arial', 'Inter', 'Merriweather', 'Playfair Display', 'Georgia', 'Times New Roman', 'Courier New'];
 const EDITOR_FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40];
@@ -431,6 +433,22 @@ const TEMPLATE_LIBRARY = {
 
 window.renderLogin = renderLogin; // Expose to global scope for inline onclick handlers
 
+function ensureBetaTopBanner() {
+  if (betaTopBannerEl && document.body.contains(betaTopBannerEl)) return betaTopBannerEl;
+
+  const banner = document.createElement('div');
+  banner.className = 'beta-top-banner';
+  banner.innerHTML = `
+    <span class="beta-top-banner-text">Join the ProEdit Beta Testers program</span>
+    <a class="beta-top-banner-link" href="${BETA_TESTER_URL}" target="_blank" rel="noopener noreferrer">Join Beta</a>
+  `;
+
+  document.body.prepend(banner);
+  document.body.classList.add('has-beta-top-banner');
+  betaTopBannerEl = banner;
+  return banner;
+}
+
 function normalizePathname(pathname) {
   const normalized = String(pathname || '/').replace(/\/+$/, '');
   return normalized || '/';
@@ -519,6 +537,7 @@ async function handleResetPasswordRoute() {
 
 
 async function init() {
+  ensureBetaTopBanner();
   await withGlobalLoading('Loading your workspace...', async () => {
     if (isResetPasswordRoute()) {
       await handleResetPasswordRoute();
@@ -638,6 +657,12 @@ function renderLanding() {
         <div class="hero-cta">
           <button class="cta-btn" onclick="renderLogin()">Start Writing for Free</button>
           <button class="cta-btn secondary" onclick="window.open('https://github.com/Jackson-0728/ProEdit', '_blank')">View on GitHub</button>
+        </div>
+
+        <div class="hero-product-hunt">
+          <a href="https://www.producthunt.com/products/proedit?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-proedit" target="_blank" rel="noopener noreferrer">
+            <img alt="ProEdit - Writing, Reimagined with AI. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1083537&amp;theme=dark&amp;t=1771717538400">
+          </a>
         </div>
         
         <div class="features-grid">
