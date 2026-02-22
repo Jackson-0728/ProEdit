@@ -90,6 +90,18 @@ body.has-beta-top-banner #app {
     margin-top: 42px;
 }
 
+/* Prevent full-viewport pages from overflowing when beta banner is active. */
+body.has-beta-top-banner .landing-page,
+body.has-beta-top-banner .error-page,
+body.has-beta-top-banner .editor-layout {
+    height: 100%;
+}
+
+body.has-beta-top-banner .login-container,
+body.has-beta-top-banner .dashboard-layout {
+    min-height: 100%;
+}
+
 @media (max-width: 640px) {
     .beta-top-banner {
         height: 44px;

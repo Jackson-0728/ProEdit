@@ -15,6 +15,12 @@
     overflow: hidden;
 }
 
+body.has-beta-top-banner .editor-layout,
+body.has-beta-top-banner .editor-layout-editor,
+body.has-beta-top-banner .editor-container {
+    height: 100%;
+}
+
 .editor-workspace {
     flex: 1;
     min-height: 0;
