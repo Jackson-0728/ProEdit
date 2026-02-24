@@ -1532,6 +1532,11 @@ body.modal-dragging {
     box-shadow: -5px 0 15px rgba(0, 0, 0, 0.05);
 }
 
+body.has-beta-top-banner .ai-popup.split-view {
+    top: var(--beta-banner-height);
+    height: calc(100vh - var(--beta-banner-height));
+}
+
 .editor-layout {
     transition: margin-right 0.3s ease;
 }
@@ -2151,6 +2156,9 @@ body.modal-dragging {
 }
 
 .pro-landing-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 10px 18px;
     border: none;
     border-radius: 14px;
@@ -2158,6 +2166,7 @@ body.modal-dragging {
     color: #FFFFFF;
     font-size: 13px;
     font-weight: 500;
+    text-decoration: none;
     cursor: pointer;
     transition: opacity 0.2s ease;
 }
@@ -2167,6 +2176,9 @@ body.modal-dragging {
 }
 
 .pro-landing-login-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     padding: 10px 16px;
     border-radius: 14px;
     border: 1px solid rgba(0, 0, 0, 0.12);
@@ -2174,6 +2186,7 @@ body.modal-dragging {
     color: #111827;
     font-size: 13px;
     font-weight: 500;
+    text-decoration: none;
     cursor: pointer;
     transition: background 0.2s ease, border-color 0.2s ease;
 }
@@ -2643,7 +2656,7 @@ body.modal-dragging {
 
 /* --- TEXT SELECTION EDIT POPUP --- */
 .text-edit-popup {
-    position: absolute;
+    position: fixed;
     background: white;
     border: 1px solid var(--border);
     border-radius: 0.75rem;
@@ -2653,6 +2666,7 @@ body.modal-dragging {
     z-index: 1500;
     animation: popupSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
     min-width: 280px;
+    max-width: calc(100vw - 24px);
 }
 
 .text-edit-popup.visible {
@@ -3710,6 +3724,10 @@ body.modal-dragging {
         bottom: 0;
         z-index: 100;
         transition: left 0.3s;
+    }
+
+    body.has-beta-top-banner .dashboard-sidebar {
+        top: var(--beta-banner-height);
     }
 
     .dashboard-sidebar.open {

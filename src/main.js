@@ -25,6 +25,7 @@ let slashTriggerRange = null;
 let globalLoadingDepth = 0;
 let globalLoaderEl = null;
 let betaTopBannerEl = null;
+let betaTopBannerResizeBound = false;
 let cleanupLandingExperience = null;
 let activeTableContext = null;
 let tableContextMenuEl = null;
@@ -434,8 +435,19 @@ const TEMPLATE_LIBRARY = {
 
 window.renderLogin = renderLogin; // Expose to global scope for inline onclick handlers
 
+function updateBetaTopBannerOffset() {
+  if (!betaTopBannerEl || !document.body.contains(betaTopBannerEl)) return;
+  const measuredHeight = Math.round(betaTopBannerEl.getBoundingClientRect().height || 0);
+  if (measuredHeight > 0) {
+    document.body.style.setProperty('--beta-banner-height', `${measuredHeight}px`);
+  }
+}
+
 function ensureBetaTopBanner() {
-  if (betaTopBannerEl && document.body.contains(betaTopBannerEl)) return betaTopBannerEl;
+  if (betaTopBannerEl && document.body.contains(betaTopBannerEl)) {
+    updateBetaTopBannerOffset();
+    return betaTopBannerEl;
+  }
 
   const banner = document.createElement('div');
   banner.className = 'beta-top-banner';
@@ -447,6 +459,15 @@ function ensureBetaTopBanner() {
   document.body.prepend(banner);
   document.body.classList.add('has-beta-top-banner');
   betaTopBannerEl = banner;
+
+  updateBetaTopBannerOffset();
+  requestAnimationFrame(updateBetaTopBannerOffset);
+
+  if (!betaTopBannerResizeBound) {
+    window.addEventListener('resize', updateBetaTopBannerOffset, { passive: true });
+    betaTopBannerResizeBound = true;
+  }
+
   return banner;
 }
 
@@ -653,8 +674,8 @@ function renderLanding() {
     <nav class="pro-landing-nav">
       <div class="pro-landing-brand">ProEdit</div>
       <div class="pro-landing-nav-actions">
-        <button class="pro-landing-login-btn" onclick="renderLogin({ mode: 'login' })">Login</button>
-        <button class="pro-landing-nav-btn" onclick="renderLogin({ mode: 'signup' })">Get Started</button>
+        <a class="pro-landing-login-btn" href="${LOGIN_PATH}">Login</a>
+        <a class="pro-landing-nav-btn" href="${SIGNUP_PATH}">Get Started</a>
       </div>
     </nav>
 
@@ -5750,6 +5771,48 @@ function setupEditorListeners() {
   const editPopupSubmit = document.getElementById('editPopupSubmit');
   let selectedTextRange = null;
   let selectedText = '';
+  const positionTextEditPopup = (range) => {
+    if (!range) return;
+    const rect = range.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return;
+
+    const viewportPadding = 12;
+    const popupGap = 14;
+    const wasVisible = textEditPopup.classList.contains('visible');
+
+    if (!wasVisible) {
+      textEditPopup.classList.add('visible');
+    }
+    textEditPopup.style.visibility = 'hidden';
+
+    const popupRect = textEditPopup.getBoundingClientRect();
+    const popupWidth = popupRect.width || 280;
+    const popupHeight = popupRect.height || 220;
+
+    let top = rect.top - popupHeight - popupGap;
+    let placement = 'above';
+    if (top < viewportPadding) {
+      top = rect.bottom + popupGap;
+      placement = 'below';
+    }
+
+    if (top + popupHeight > window.innerHeight - viewportPadding) {
+      top = Math.max(viewportPadding, window.innerHeight - popupHeight - viewportPadding);
+    }
+
+    let left = rect.left + (rect.width / 2) - (popupWidth / 2);
+    const maxLeft = Math.max(viewportPadding, window.innerWidth - popupWidth - viewportPadding);
+    left = Math.max(viewportPadding, Math.min(left, maxLeft));
+
+    textEditPopup.style.top = `${Math.round(top)}px`;
+    textEditPopup.style.left = `${Math.round(left)}px`;
+    textEditPopup.dataset.placement = placement;
+    textEditPopup.style.visibility = '';
+
+    if (!wasVisible) {
+      textEditPopup.classList.remove('visible');
+    }
+  };
 
   // Show popup when text is selected
   document.addEventListener('mouseup', (e) => {
@@ -5766,15 +5829,7 @@ function setupEditorListeners() {
       if (editor.contains(range.commonAncestorContainer)) {
         selectedText = text;
         selectedTextRange = range.cloneRange();
-
-        // Position the popup near the selection
-        const rect = range.getBoundingClientRect();
-        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
-        const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
-
-        // Position above the selection
-        textEditPopup.style.top = `${rect.top + scrollTop - textEditPopup.offsetHeight - 10}px`;
-        textEditPopup.style.left = `${rect.left + scrollLeft}px`;
+        positionTextEditPopup(selectedTextRange);
 
         // Show the popup
         textEditPopup.classList.add('visible');
@@ -5887,6 +5942,7 @@ function setupEditorListeners() {
         // Show custom input
         editPopupCustom.classList.add('visible');
         editPopupInput.focus();
+        requestAnimationFrame(() => positionTextEditPopup(selectedTextRange));
       } else {
         // Execute quick action
         handleEditAction(action);
@@ -5899,6 +5955,7 @@ function setupEditorListeners() {
     e.stopPropagation();
     editPopupCustom.classList.remove('visible');
     editPopupInput.value = '';
+    requestAnimationFrame(() => positionTextEditPopup(selectedTextRange));
   });
 
   // Custom edit submit

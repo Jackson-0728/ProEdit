@@ -1123,6 +1123,11 @@ body.editor-image-resizing {
     z-index: 100;
 }
 
+body.has-beta-top-banner .comments-sidebar-modern {
+    top: var(--beta-banner-height);
+    height: calc(100vh - var(--beta-banner-height));
+}
+
 .comments-sidebar-modern .comments-header {
     display: flex;
     justify-content: space-between;
@@ -1646,6 +1651,10 @@ body.editor-image-resizing {
     flex-direction: column;
     gap: 0.5rem;
     pointer-events: none;
+}
+
+body.has-beta-top-banner .custom-alert-host {
+    top: calc(var(--beta-banner-height) + 16px);
 }
 
 .custom-alert {
