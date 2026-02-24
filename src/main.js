@@ -3779,6 +3779,35 @@ function sanitizeAiSnippet(rawSnippet = '') {
     .trim();
 }
 
+function decodeHtmlEntities(rawValue = '') {
+  const decoder = document.createElement('textarea');
+  decoder.innerHTML = String(rawValue ?? '');
+  return decoder.value;
+}
+
+function normalizeAiDraftForInsertion(rawDraft = '') {
+  let normalized = sanitizeAiSnippet(rawDraft);
+  if (!normalized) return '';
+
+  const hasHtmlTag = (value) => /<\/?[a-z][^>]*>/i.test(value);
+
+  if (!hasHtmlTag(normalized) && /&lt;\/?[a-z][^&]*&gt;/i.test(normalized)) {
+    const decoded = decodeHtmlEntities(normalized);
+    if (hasHtmlTag(decoded)) {
+      normalized = decoded;
+    }
+  }
+
+  if (hasHtmlTag(normalized)) {
+    return normalized;
+  }
+
+  return escapeHtmlAttribute(normalized)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n/g, '<br>');
+}
+
 function createAiChangeBatchId() {
   return `ai-change-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -4142,6 +4171,53 @@ Rules:
   });
 
   return result || { applied: false, content: baseContent };
+}
+
+async function applyAiReplacementToEditorRange(editor, targetRange, rawReplacementHtml) {
+  if (!editor || !targetRange) return false;
+
+  const withinEditor = editor.contains(targetRange.commonAncestorContainer) || targetRange.commonAncestorContainer === editor;
+  if (!withinEditor) return false;
+
+  const normalizedReplacement = normalizeAiDraftForInsertion(rawReplacementHtml);
+  if (!normalizedReplacement) return false;
+
+  if (pendingAiChangeBatch) {
+    await finalizeAiChangeBatch('save', { silent: true });
+  }
+
+  const aiBatchId = createAiChangeBatchId();
+  const beforeHtml = editor.innerHTML;
+  const replacementHtml = annotateHtmlForAiBatch(normalizedReplacement, aiBatchId);
+  if (!replacementHtml) return false;
+
+  const range = targetRange.cloneRange();
+  range.deleteContents();
+
+  const temp = document.createElement('div');
+  temp.innerHTML = replacementHtml;
+  const fragment = document.createDocumentFragment();
+  let node;
+  let lastNode = null;
+  while ((node = temp.firstChild)) {
+    lastNode = fragment.appendChild(node);
+  }
+  range.insertNode(fragment);
+
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  if (lastNode) {
+    const cursorRange = document.createRange();
+    cursorRange.setStartAfter(lastNode);
+    cursorRange.collapse(true);
+    selection?.addRange(cursorRange);
+  }
+
+  beginAiChangeBatch(beforeHtml, aiBatchId);
+  ensureResizableImages(editor);
+  scheduleAiChangeControlRender();
+  scheduleCommentHighlightsRender();
+  return true;
 }
 
 async function copyTextToClipboard(text) {
@@ -5856,6 +5932,7 @@ function setupEditorListeners() {
   // Handle edit actions
   const handleEditAction = async (action, customPrompt = '') => {
     if (!selectedText || !selectedTextRange) return;
+    const targetRange = selectedTextRange.cloneRange();
 
     let prompt = '';
 
@@ -5908,18 +5985,27 @@ function setupEditorListeners() {
     try {
       const selectedModel = aiModelSelector?.value || savedModel;
       const response = await generateContent(prompt, selectedModel);
-      const editedText = response.trim();
+      const draftHtml = normalizeAiDraftForInsertion(response);
+      if (!draftHtml) {
+        alert('AI returned empty text');
+        return;
+      }
 
-      // Restore the selection and replace the text
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(selectedTextRange);
+      const preview = await showAiApplyPreviewDialog({
+        title: 'Review AI edit',
+        description: 'Edit this suggestion if needed, then insert it.',
+        initialContent: draftHtml,
+        insertLabel: 'Insert',
+        selectedModel
+      });
+      if (!preview.applied) return;
 
-      // Replace the selected text
-      document.execCommand('insertText', false, editedText);
-
-      // Update document
-      updateCurrentDoc({ content: editor.innerHTML });
+      const inserted = await applyAiReplacementToEditorRange(editor, targetRange, preview.content);
+      if (!inserted) {
+        alert('Could not apply the AI edit to this selection');
+        return;
+      }
+      showCustomAlert('AI changes highlighted. Use Save all or Revert all.');
 
       // Clear selection
       selectedText = '';
@@ -7561,10 +7647,8 @@ Rules:
       || localStorage.getItem('proedit_ai_model')
       || 'gemini-2.5-flash';
     const response = await generateContent(prompt, selectedModel);
-    let revisedText = String(response || '').trim();
-    revisedText = revisedText.replace(/^```(?:text)?/i, '').replace(/```$/i, '').trim();
-
-    if (!revisedText) {
+    const revisedHtml = normalizeAiDraftForInsertion(response);
+    if (!revisedHtml) {
       alert('AI returned empty text');
       return;
     }
@@ -7572,7 +7656,7 @@ Rules:
     const preview = await showAiApplyPreviewDialog({
       title: 'Review AI fix',
       description: 'Edit this fix if needed, then apply it to the selected text.',
-      initialContent: revisedText,
+      initialContent: revisedHtml,
       insertLabel: 'Apply Fix',
       selectedModel
     });
@@ -7580,41 +7664,13 @@ Rules:
 
     const editor = document.getElementById('editor');
     if (!editor) return;
-
-    if (pendingAiChangeBatch) {
-      await finalizeAiChangeBatch('save', { silent: true });
+    const inserted = await applyAiReplacementToEditorRange(editor, anchor.range, preview.content);
+    if (!inserted) {
+      alert('Could not apply this AI fix');
+      return;
     }
-
-    const aiBatchId = createAiChangeBatchId();
-    const beforeHtml = editor.innerHTML;
-    const replacementHtml = annotateHtmlForAiBatch(preview.content, aiBatchId);
-
-    const range = anchor.range.cloneRange();
-    range.deleteContents();
-    const temp = document.createElement('div');
-    temp.innerHTML = replacementHtml;
-    const fragment = document.createDocumentFragment();
-    let node;
-    let lastNode = null;
-    while ((node = temp.firstChild)) {
-      lastNode = fragment.appendChild(node);
-    }
-    range.insertNode(fragment);
-
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    if (lastNode) {
-      const cursorRange = document.createRange();
-      cursorRange.setStartAfter(lastNode);
-      cursorRange.collapse(true);
-      selection.addRange(cursorRange);
-    }
-
-    beginAiChangeBatch(beforeHtml, aiBatchId);
-    scheduleAiChangeControlRender();
-    scheduleCommentHighlightsRender();
     activeCommentId = commentId;
-    alert('AI fix inserted and highlighted');
+    showCustomAlert('AI changes highlighted. Use Save all or Revert all.');
     await loadComments({ focusCommentId: commentId });
   } catch (error) {
     console.error('Failed to apply AI fix:', error);
