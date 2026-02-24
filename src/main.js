@@ -25,6 +25,7 @@ let slashTriggerRange = null;
 let globalLoadingDepth = 0;
 let globalLoaderEl = null;
 let betaTopBannerEl = null;
+let cleanupLandingExperience = null;
 let activeTableContext = null;
 let tableContextMenuEl = null;
 let tableContextMenuBound = false;
@@ -642,52 +643,187 @@ window.addEventListener('popstate', async () => {
 // --- VIEWS ---
 
 function renderLanding() {
-  app.innerHTML = `
-  <div class="landing-page">
-      <nav class="landing-nav">
-        <div class="brand">ProEdit</div>
-        <div class="nav-links">
-          <button class="nav-btn primary" onclick="renderLogin()">Get Started</button>
-        </div>
-      </nav>
-      
-      <main class="landing-hero">
-        <h1 class="hero-title">Writing, <span class="gradient-text">Reimagined</span> with AI.</h1>
-        <p class="hero-subtitle">The advanced AI-powered editor for professionals. Write faster, edit smarter, and create content that stands out.</p>
-        <div class="hero-cta">
-          <button class="cta-btn" onclick="renderLogin()">Start Writing for Free</button>
-          <button class="cta-btn secondary" onclick="window.open('https://github.com/Jackson-0728/ProEdit', '_blank')">View on GitHub</button>
-        </div>
+  if (typeof cleanupLandingExperience === 'function') {
+    cleanupLandingExperience();
+    cleanupLandingExperience = null;
+  }
 
-        <div class="hero-product-hunt">
-          <a href="https://www.producthunt.com/products/proedit?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-proedit" target="_blank" rel="noopener noreferrer">
-            <img alt="ProEdit - Writing, Reimagined with AI. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1083537&amp;theme=dark&amp;t=1771717538400">
-          </a>
-        </div>
-        
-        <div class="features-grid">
-          <div class="feature-card">
-            <div class="feature-icon"><i class="iconoir-sparks"></i></div>
+  app.innerHTML = `
+  <div class="pro-landing" id="proLandingPage">
+    <nav class="pro-landing-nav">
+      <div class="pro-landing-brand">ProEdit</div>
+      <div class="pro-landing-nav-actions">
+        <button class="pro-landing-login-btn" onclick="renderLogin({ mode: 'login' })">Login</button>
+        <button class="pro-landing-nav-btn" onclick="renderLogin({ mode: 'signup' })">Get Started</button>
+      </div>
+    </nav>
+
+    <section class="pro-hero" id="proHero">
+      <h1><span id="proHeroTypewriter"></span><span class="pro-caret"></span></h1>
+
+      <p id="proHeroSubtitle">
+        The advanced AI-powered editor for professionals. Write faster, edit smarter, and create content that stands out.
+      </p>
+
+      <div class="pro-hero-cta" id="proHeroButtons">
+        <button class="pro-btn pro-btn-primary" onclick="renderLogin({ mode: 'signup' })">Start Writing for Free</button>
+        <button class="pro-btn pro-btn-secondary" onclick="window.open('https://github.com/Jackson-0728/ProEdit', '_blank', 'noopener,noreferrer')">View on GitHub</button>
+      </div>
+
+      <div class="pro-product-hunt" id="proProductHuntBadge">
+        <a href="https://www.producthunt.com/products/proedit?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-proedit" target="_blank" rel="noopener noreferrer">
+          <img alt="ProEdit - Writing, Reimagined with AI. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1083537&amp;theme=dark&amp;t=1771717538400">
+        </a>
+      </div>
+
+      <button class="pro-scroll-indicator" id="proScrollIndicator" aria-label="Scroll to features">
+        <span>Scroll to explore</span>
+        <i class="iconoir-nav-arrow-down"></i>
+      </button>
+    </section>
+
+    <section class="pro-features-section" id="proFeaturesSection">
+      <div class="pro-features-sticky">
+        <div class="pro-features-title">Features</div>
+        <div class="pro-features-cards" id="proFeatureCards">
+          <article class="pro-feature-card">
             <h3>AI Assistant</h3>
-            <p>Generate content, summarize text, and get writing suggestions instantly.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon"><i class="iconoir-cloud"></i></div>
+            <p>Generate content, summarize text, and get writing suggestions instantly. Context-aware and intelligent.</p>
+          </article>
+          <article class="pro-feature-card">
             <h3>Cloud Sync</h3>
-            <p>Access your documents from anywhere. Your work is always safe.</p>
-          </div>
-          <div class="feature-card">
-            <div class="feature-icon"><i class="iconoir-edit-pencil"></i></div>
+            <p>Access your documents anywhere. Secure infrastructure with real-time synchronization.</p>
+          </article>
+          <article class="pro-feature-card">
             <h3>Rich Editor</h3>
-            <p>A powerful, distraction-free editor with all the formatting tools you need.</p>
-          </div>
+            <p>A distraction-free writing experience with powerful formatting tools built for professionals.</p>
+          </article>
         </div>
-      </main>
-    </div>
+      </div>
+    </section>
+
+    <section class="pro-spotlight" id="proSpotlightSection">
+      <div class="pro-spotlight-sticky">
+        <article class="pro-spotlight-card" id="proSpotlightCard">
+          <h2>AI That Understands Context</h2>
+          <p>
+            ProEdit analyzes structure, tone, and intent - helping professionals refine ideas,
+            enhance clarity, and publish with confidence.
+          </p>
+        </article>
+      </div>
+    </section>
+
+    <section class="pro-final-section">
+      <h2>Start Writing Differently.</h2>
+      <p>Experience a smarter workflow built around clarity, speed, and precision.</p>
+      <button class="pro-final-btn" onclick="renderLogin({ mode: 'signup' })">Start Writing for Free</button>
+    </section>
+
+    <footer class="pro-landing-footer">© 2026 ProEdit</footer>
+  </div>
   `;
+
+  initLandingExperience();
+}
+
+function disposeLandingExperience() {
+  if (typeof cleanupLandingExperience !== 'function') return;
+  cleanupLandingExperience();
+  cleanupLandingExperience = null;
+}
+
+function initLandingExperience() {
+  const landing = document.getElementById('proLandingPage');
+  if (!landing) return;
+
+  const heroTypewriter = document.getElementById('proHeroTypewriter');
+  const subtitle = document.getElementById('proHeroSubtitle');
+  const buttons = document.getElementById('proHeroButtons');
+  const badge = document.getElementById('proProductHuntBadge');
+  const indicator = document.getElementById('proScrollIndicator');
+  const featuresSection = document.getElementById('proFeaturesSection');
+  const featureCards = document.getElementById('proFeatureCards');
+  const spotlightSection = document.getElementById('proSpotlightSection');
+  const spotlightCard = document.getElementById('proSpotlightCard');
+
+  if (!heroTypewriter || !subtitle || !buttons || !badge || !indicator || !featuresSection || !featureCards || !spotlightSection || !spotlightCard) {
+    return;
+  }
+
+  const fullText = 'Writing, Reimagined with AI.';
+  heroTypewriter.textContent = '';
+  let index = 0;
+
+  const revealHeroMeta = () => {
+    [subtitle, buttons, badge, indicator].forEach((el, order) => {
+      el.style.transitionDelay = `${order * 120}ms`;
+      el.classList.add('is-visible');
+    });
+  };
+
+  const typeStep = () => {
+    if (index < fullText.length) {
+      heroTypewriter.textContent += fullText.charAt(index);
+      index += 1;
+      setTimeout(typeStep, 35);
+      return;
+    }
+    revealHeroMeta();
+  };
+  typeStep();
+
+  indicator.addEventListener('click', () => {
+    featuresSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
+
+  const updateScrollScene = () => {
+    const viewportHeight = landing.clientHeight;
+    const currentTop = landing.scrollTop;
+    const compactMode = window.matchMedia('(max-width: 900px)').matches;
+
+    if (compactMode) {
+      featureCards.style.transform = 'none';
+      spotlightCard.style.opacity = '1';
+      spotlightCard.style.filter = 'blur(0px)';
+      spotlightCard.style.transform = 'scale(1)';
+      indicator.classList.toggle('is-hidden', currentTop > 40);
+      return;
+    }
+
+    const featureStart = featuresSection.offsetTop;
+    const featureEnd = featureStart + featuresSection.offsetHeight - viewportHeight;
+    const featureProgress = clamp((currentTop - featureStart) / Math.max(1, featureEnd - featureStart));
+    const featureTranslate = 120 - (featureProgress * 280);
+    featureCards.style.transform = `translate3d(${featureTranslate}vw, 0, 0)`;
+
+    const spotlightStart = spotlightSection.offsetTop;
+    const spotlightEnd = spotlightStart + spotlightSection.offsetHeight - viewportHeight;
+    const spotlightProgress = clamp((currentTop - spotlightStart) / Math.max(1, spotlightEnd - spotlightStart));
+    const revealProgress = clamp(spotlightProgress * 1.25);
+    const blur = (1 - revealProgress) * 20;
+    const scale = 0.96 + (0.04 * revealProgress);
+    spotlightCard.style.opacity = String(revealProgress);
+    spotlightCard.style.filter = `blur(${blur}px)`;
+    spotlightCard.style.transform = `scale(${scale})`;
+
+    indicator.classList.toggle('is-hidden', currentTop > 40);
+  };
+
+  landing.addEventListener('scroll', updateScrollScene, { passive: true });
+  window.addEventListener('resize', updateScrollScene);
+  updateScrollScene();
+
+  cleanupLandingExperience = () => {
+    landing.removeEventListener('scroll', updateScrollScene);
+    window.removeEventListener('resize', updateScrollScene);
+  };
 }
 
 function renderLogin(options = {}) {
+  disposeLandingExperience();
   const normalizedOptions = typeof options === 'string' ? { mode: options } : options;
   const initialMode = normalizeAuthMode(normalizedOptions.mode || getAuthModeFromLocation() || 'login');
   const shouldSyncUrl = normalizedOptions.syncUrl !== false;
@@ -910,6 +1046,7 @@ function renderLogin(options = {}) {
 }
 
 function renderResetPassword({ valid = false, message = '' } = {}) {
+  disposeLandingExperience();
   app.innerHTML = `
     <div class="login-container">
       <div class="login-card">
@@ -1031,6 +1168,7 @@ function renderResetPassword({ valid = false, message = '' } = {}) {
 // This file contains the complete renderDashboard function with multi-view support
 
 function renderDashboard() {
+  disposeLandingExperience();
   const userName = user.user_metadata?.full_name || (user.email ? user.email.split('@')[0] : 'User');
   const userEmail = user.email || 'user@proedit.com';
   let currentView = 'dashboard'; // 'dashboard' or 'documents'
@@ -1700,6 +1838,7 @@ function renderDashboard() {
 }
 
 async function renderEditor() {
+  disposeLandingExperience();
   const doc = documents.find(d => d.id === currentDocId);
   if (!doc) return;
   pendingAiChangeBatch = null;
@@ -2286,6 +2425,7 @@ async function loadPublicDocument(docId) {
 }
 
 function renderPublicEditor() {
+  disposeLandingExperience();
   const doc = documents.find(d => d.id === currentDocId);
   if (!doc) return;
   pendingAiChangeBatch = null;
