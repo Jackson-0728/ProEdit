@@ -25,14 +25,11 @@ let slashTriggerRange = null;
 let globalLoadingDepth = 0;
 let globalLoaderEl = null;
 let betaTopBannerEl = null;
-let betaTopBannerResizeBound = false;
 let cleanupLandingExperience = null;
 let activeTableContext = null;
 let tableContextMenuEl = null;
 let tableContextMenuBound = false;
 let toolbarMenuDismissBound = false;
-let importedDocumentFileType = null;
-let pdfFormModeEnabled = false;
 
 // DOM Elements
 const app = document.querySelector('#app');
@@ -40,7 +37,6 @@ const RESET_PASSWORD_PATH = '/reset-password';
 const LOGIN_PATH = '/login';
 const SIGNUP_PATH = '/signup';
 const BETA_TESTER_URL = 'https://betatestersapp-proedit.vercel.app/';
-const IMPORT_FILE_ACCEPT = '.pdf,.txt,.html,.htm,.md,.markdown,.docx,application/pdf,text/plain,text/html,text/markdown,text/x-markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const TEMPLATE_ORDER = ['blank', 'meeting', 'proposal', 'report', 'letter', 'resume', 'blog'];
 const EDITOR_FONT_FAMILIES = ['Arial', 'Inter', 'Merriweather', 'Playfair Display', 'Georgia', 'Times New Roman', 'Courier New'];
 const EDITOR_FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40];
@@ -438,19 +434,8 @@ const TEMPLATE_LIBRARY = {
 
 window.renderLogin = renderLogin; // Expose to global scope for inline onclick handlers
 
-function updateBetaTopBannerOffset() {
-  if (!betaTopBannerEl || !document.body.contains(betaTopBannerEl)) return;
-  const measuredHeight = Math.round(betaTopBannerEl.getBoundingClientRect().height || 0);
-  if (measuredHeight > 0) {
-    document.body.style.setProperty('--beta-banner-height', `${measuredHeight}px`);
-  }
-}
-
 function ensureBetaTopBanner() {
-  if (betaTopBannerEl && document.body.contains(betaTopBannerEl)) {
-    updateBetaTopBannerOffset();
-    return betaTopBannerEl;
-  }
+  if (betaTopBannerEl && document.body.contains(betaTopBannerEl)) return betaTopBannerEl;
 
   const banner = document.createElement('div');
   banner.className = 'beta-top-banner';
@@ -462,15 +447,6 @@ function ensureBetaTopBanner() {
   document.body.prepend(banner);
   document.body.classList.add('has-beta-top-banner');
   betaTopBannerEl = banner;
-
-  updateBetaTopBannerOffset();
-  requestAnimationFrame(updateBetaTopBannerOffset);
-
-  if (!betaTopBannerResizeBound) {
-    window.addEventListener('resize', updateBetaTopBannerOffset, { passive: true });
-    betaTopBannerResizeBound = true;
-  }
-
   return banner;
 }
 
@@ -677,8 +653,8 @@ function renderLanding() {
     <nav class="pro-landing-nav">
       <div class="pro-landing-brand">ProEdit</div>
       <div class="pro-landing-nav-actions">
-        <a class="pro-landing-login-btn" href="${LOGIN_PATH}">Login</a>
-        <a class="pro-landing-nav-btn" href="${SIGNUP_PATH}">Get Started</a>
+        <button class="pro-landing-login-btn" onclick="renderLogin({ mode: 'login' })">Login</button>
+        <button class="pro-landing-nav-btn" onclick="renderLogin({ mode: 'signup' })">Get Started</button>
       </div>
     </nav>
 
@@ -711,24 +687,15 @@ function renderLanding() {
         <div class="pro-features-title">Features</div>
         <div class="pro-features-cards" id="proFeatureCards">
           <article class="pro-feature-card">
-            <div class="pro-feature-head">
-              <span class="pro-feature-icon"><i class="iconoir-sparks"></i></span>
-              <h3>AI Assistant</h3>
-            </div>
+            <h3>AI Assistant</h3>
             <p>Generate content, summarize text, and get writing suggestions instantly. Context-aware and intelligent.</p>
           </article>
           <article class="pro-feature-card">
-            <div class="pro-feature-head">
-              <span class="pro-feature-icon"><i class="iconoir-share-android"></i></span>
-              <h3>Cloud Sync</h3>
-            </div>
+            <h3>Cloud Sync</h3>
             <p>Access your documents anywhere. Secure infrastructure with real-time synchronization.</p>
           </article>
           <article class="pro-feature-card">
-            <div class="pro-feature-head">
-              <span class="pro-feature-icon"><i class="iconoir-edit-pencil"></i></span>
-              <h3>Rich Editor</h3>
-            </div>
+            <h3>Rich Editor</h3>
             <p>A distraction-free writing experience with powerful formatting tools built for professionals.</p>
           </article>
         </div>
@@ -747,7 +714,7 @@ function renderLanding() {
       </div>
     </section>
 
-    <section class="pro-try-section" id="proTrySection">
+     <section class="pro-try-section" id="proTrySection">
       <div class="pro-try-copy">
         <h2>Try ProEdit in 5 Seconds</h2>
         <p>
@@ -799,7 +766,7 @@ function renderLanding() {
               <div class="ai-title"><i class="iconoir-sparks"></i> AI Assistant</div>
             </div>
             <div class="ai-messages" id="proTryAiMessages">
-              <div class="ai-message ai">Ready to run demo action.</div>
+              <div class="ai-message ai">Ready to run demo actin.</div>
             </div>
             <div class="ai-input-area">
               <input
@@ -849,26 +816,8 @@ function initLandingExperience() {
   const featureCards = document.getElementById('proFeatureCards');
   const spotlightSection = document.getElementById('proSpotlightSection');
   const spotlightCard = document.getElementById('proSpotlightCard');
-  const tryPrompt = document.getElementById('proTryAiPrompt');
-  const trySend = document.getElementById('proTryAiSend');
-  const tryMessages = document.getElementById('proTryAiMessages');
-  const tryParagraph = document.getElementById('proTryParagraph');
 
-  if (
-    !heroTypewriter
-    || !subtitle
-    || !buttons
-    || !badge
-    || !indicator
-    || !featuresSection
-    || !featureCards
-    || !spotlightSection
-    || !spotlightCard
-    || !tryPrompt
-    || !trySend
-    || !tryMessages
-    || !tryParagraph
-  ) {
+  if (!heroTypewriter || !subtitle || !buttons || !badge || !indicator || !featuresSection || !featureCards || !spotlightSection || !spotlightCard) {
     return;
   }
 
@@ -899,49 +848,6 @@ function initLandingExperience() {
   });
 
   const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
-  let tryDemoTimer = null;
-  let tryDemoBusy = false;
-
-  const runTryDemo = () => {
-    if (tryDemoBusy) return;
-    tryDemoBusy = true;
-    trySend.disabled = true;
-    const safePrompt = escapeHtmlValue(tryPrompt.value);
-
-    tryMessages.innerHTML = `
-      <div class="ai-message user">${safePrompt}</div>
-      <div class="ai-message ai loading">
-        <span class="ai-loading-label">Running mock action</span>
-        <span class="loading-dots"><span></span><span></span><span></span></span>
-      </div>
-    `;
-
-    if (tryDemoTimer) {
-      clearTimeout(tryDemoTimer);
-      tryDemoTimer = null;
-    }
-
-    tryDemoTimer = setTimeout(() => {
-      tryParagraph.textContent = 'Launch on April 8 with a focused LinkedIn and email campaign, track weekly activation, and iterate messaging from user feedback within 48 hours.';
-      tryParagraph.classList.add('is-updated');
-      tryMessages.innerHTML = `
-        <div class="ai-message user">${safePrompt}</div>
-        <div class="ai-message ai">Done. Replaced the paragraph with a tighter action plan.</div>
-      `;
-      tryDemoBusy = false;
-      trySend.disabled = false;
-    }, 680);
-  };
-
-  const onTrySendClick = () => runTryDemo();
-  const onTryPromptKeydown = (event) => {
-    if (event.key !== 'Enter') return;
-    event.preventDefault();
-    runTryDemo();
-  };
-
-  trySend.addEventListener('click', onTrySendClick);
-  tryPrompt.addEventListener('keydown', onTryPromptKeydown);
 
   const updateScrollScene = () => {
     const viewportHeight = landing.clientHeight;
@@ -960,7 +866,7 @@ function initLandingExperience() {
     const featureStart = featuresSection.offsetTop;
     const featureEnd = featureStart + featuresSection.offsetHeight - viewportHeight;
     const featureProgress = clamp((currentTop - featureStart) / Math.max(1, featureEnd - featureStart));
-    const featureTranslate = 120 - (featureProgress * 230);
+    const featureTranslate = 120 - (featureProgress * 280);
     featureCards.style.transform = `translate3d(${featureTranslate}vw, 0, 0)`;
 
     const spotlightStart = spotlightSection.offsetTop;
@@ -981,12 +887,6 @@ function initLandingExperience() {
   updateScrollScene();
 
   cleanupLandingExperience = () => {
-    if (tryDemoTimer) {
-      clearTimeout(tryDemoTimer);
-      tryDemoTimer = null;
-    }
-    trySend.removeEventListener('click', onTrySendClick);
-    tryPrompt.removeEventListener('keydown', onTryPromptKeydown);
     landing.removeEventListener('scroll', updateScrollScene);
     window.removeEventListener('resize', updateScrollScene);
   };
@@ -2105,23 +2005,12 @@ async function renderEditor() {
         <!-- Toolbar -->
         ${getFormattingToolbarMarkup({ toolbarId: 'editorToolbar', includeExport: true })}
 
-	        <!-- Editor -->
-	        <div class="editor-area">
-	          <div class="pdf-form-tools" id="pdfFormTools" style="display: none;">
-	            <span class="pdf-form-tools-label">PDF Form Mode</span>
-	            <button type="button" class="pdf-form-tool-btn" id="pdfFormAddCheckboxBtn" title="Insert checkbox">
-	              <i class="iconoir-check-square"></i>
-	              <span>Checkbox</span>
-	            </button>
-	            <button type="button" class="pdf-form-tool-btn" id="pdfFormAddSignatureBtn" title="Insert signature">
-	              <i class="iconoir-edit-pencil"></i>
-	              <span>Signature</span>
-	            </button>
-	          </div>
-	          <div id="editor" contenteditable="${contentEditableState}" spellcheck="false" data-role="${userRole}">
-	            ${doc.content || ''}
-	          </div>
-	        </div>
+        <!-- Editor -->
+        <div class="editor-area">
+          <div id="editor" contenteditable="${contentEditableState}" spellcheck="false" data-role="${userRole}">
+            ${doc.content || ''}
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2466,8 +2355,6 @@ async function openDoc(id, options = {}) {
 function closeDoc() {
   pendingAiChangeBatch = null;
   clearAiChangeControlLayer();
-  importedDocumentFileType = null;
-  pdfFormModeEnabled = false;
   if (documentChatUnsubscribe) {
     documentChatUnsubscribe();
     documentChatUnsubscribe = null;
@@ -2613,8 +2500,6 @@ function renderPublicEditor() {
   if (!doc) return;
   pendingAiChangeBatch = null;
   clearAiChangeControlLayer();
-  importedDocumentFileType = null;
-  pdfFormModeEnabled = false;
 
   app.innerHTML = `
         <div class="editor-layout">
@@ -2873,8 +2758,6 @@ function getFormattingToolbarMarkup({ toolbarId = '', extraClass = '', includeEx
         <button type="button" class="tool-btn" data-editor-cmd="insertUnorderedList" title="Bulleted list"><i class="iconoir-list"></i></button>
         <button type="button" class="tool-btn" data-editor-cmd="insertOrderedList" title="Numbered list"><i class="iconoir-numbered-list-left"></i></button>
 
-        ${includeExport ? '<button type="button" class="tool-btn" id="importBtn2" title="Import file"><i class="iconoir-upload"></i></button>' : ''}
-        ${includeExport ? '<button type="button" class="tool-btn" id="pdfFormModeBtn" title="PDF form mode"><i class="iconoir-edit-pencil"></i></button>' : ''}
         ${includeExport ? '<button type="button" class="tool-btn" id="exportBtn2" title="Download"><i class="iconoir-download"></i></button>' : ''}
       </div>
     </div>
@@ -2987,322 +2870,6 @@ async function pickFileFromDevice(accept = '*/*') {
     }, { once: true });
 
     input.click();
-  });
-}
-
-function getFileExtensionFromName(filename = '') {
-  const safeName = String(filename || '').trim();
-  const lastDot = safeName.lastIndexOf('.');
-  if (lastDot <= 0 || lastDot === safeName.length - 1) return '';
-  return safeName.slice(lastDot + 1).toLowerCase();
-}
-
-function detectImportFileType(file) {
-  const extension = getFileExtensionFromName(file?.name || '');
-  if (extension === 'pdf') return 'pdf';
-  if (extension === 'txt') return 'txt';
-  if (extension === 'html' || extension === 'htm') return 'html';
-  if (extension === 'md' || extension === 'markdown') return 'md';
-  if (extension === 'docx') return 'docx';
-
-  const mimeType = String(file?.type || '').toLowerCase();
-  if (mimeType.includes('pdf')) return 'pdf';
-  if (mimeType === 'text/plain') return 'txt';
-  if (mimeType === 'text/html') return 'html';
-  if (mimeType === 'text/markdown' || mimeType === 'text/x-markdown') return 'md';
-  if (mimeType.includes('wordprocessingml.document')) return 'docx';
-  return '';
-}
-
-async function readFileAsText(file) {
-  if (!file) return '';
-  if (typeof file.text === 'function') return file.text();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error('Failed to read file as text'));
-    reader.readAsText(file);
-  });
-}
-
-async function readFileAsArrayBuffer(file) {
-  if (!file) return new ArrayBuffer(0);
-  if (typeof file.arrayBuffer === 'function') return file.arrayBuffer();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result instanceof ArrayBuffer ? reader.result : new ArrayBuffer(0));
-    reader.onerror = () => reject(reader.error || new Error('Failed to read file as binary'));
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-function plainTextToParagraphHtml(text = '') {
-  const normalized = String(text ?? '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
-
-  if (!normalized) return '<p><br></p>';
-
-  const paragraphs = normalized
-    .split(/\n{2,}/)
-    .map((chunk) => `<p>${escapeHtmlAttribute(chunk).replace(/\n/g, '<br>') || '<br>'}</p>`)
-    .join('');
-
-  return paragraphs || '<p><br></p>';
-}
-
-function sanitizeImportedHtml(rawHtml = '') {
-  const parser = new DOMParser();
-  const parsed = parser.parseFromString(`<div>${String(rawHtml ?? '')}</div>`, 'text/html');
-  const root = parsed.body.firstElementChild || parsed.body;
-
-  root.querySelectorAll('script, style, noscript, iframe, object, embed, meta, link').forEach((node) => node.remove());
-
-  root.querySelectorAll('*').forEach((element) => {
-    Array.from(element.attributes).forEach((attribute) => {
-      const name = String(attribute.name || '').toLowerCase();
-      const value = String(attribute.value || '');
-      if (name.startsWith('on')) {
-        element.removeAttribute(attribute.name);
-        return;
-      }
-      if ((name === 'href' || name === 'src' || name === 'xlink:href') && /^\s*javascript:/i.test(value)) {
-        element.removeAttribute(attribute.name);
-        return;
-      }
-      if (name === 'style' && /(expression\s*\(|url\s*\(\s*javascript:)/i.test(value)) {
-        element.removeAttribute(attribute.name);
-      }
-    });
-  });
-
-  return String(root.innerHTML || '').trim();
-}
-
-async function convertMarkdownToHtml(markdownText = '') {
-  try {
-    const markedModule = await loadRemoteModule('marked', 'https://esm.sh/marked@13.0.2');
-    const markedApi = markedModule?.marked || markedModule?.default?.marked || markedModule?.default || markedModule;
-    const parse = typeof markedApi?.parse === 'function' ? markedApi.parse.bind(markedApi) : markedApi;
-    if (typeof parse !== 'function') throw new Error('Markdown parser unavailable');
-    return sanitizeImportedHtml(parse(String(markdownText || '')));
-  } catch (error) {
-    console.warn('Markdown parser unavailable, falling back to plain text:', error);
-    return plainTextToParagraphHtml(markdownText);
-  }
-}
-
-async function convertDocxToHtml(arrayBuffer) {
-  const mammothModule = await loadRemoteModule('mammoth', 'https://esm.sh/mammoth@1.8.0');
-  const mammoth = mammothModule?.default || mammothModule;
-  if (typeof mammoth?.convertToHtml !== 'function') {
-    throw new Error('DOCX converter unavailable');
-  }
-  const result = await mammoth.convertToHtml({ arrayBuffer });
-  return sanitizeImportedHtml(result?.value || '');
-}
-
-async function convertPdfToHtml(arrayBuffer) {
-  const pdfModule = await loadRemoteModule('pdfjs', 'https://esm.sh/pdfjs-dist@4.8.69/legacy/build/pdf.mjs');
-  const pdfjs = pdfModule?.default || pdfModule;
-  if (!pdfjs?.getDocument) throw new Error('PDF parser unavailable');
-
-  if (pdfjs.GlobalWorkerOptions) {
-    pdfjs.GlobalWorkerOptions.workerSrc = 'https://esm.sh/pdfjs-dist@4.8.69/legacy/build/pdf.worker.min.mjs';
-  }
-
-  const data = arrayBuffer instanceof ArrayBuffer ? new Uint8Array(arrayBuffer) : new Uint8Array(await arrayBuffer);
-  const loadingTask = pdfjs.getDocument({ data });
-  const pdf = await loadingTask.promise;
-
-  const pages = [];
-  for (let pageIndex = 1; pageIndex <= pdf.numPages; pageIndex += 1) {
-    const page = await pdf.getPage(pageIndex);
-    const textContent = await page.getTextContent();
-    const pieces = Array.isArray(textContent?.items) ? textContent.items : [];
-
-    const lines = [];
-    let lineBuffer = '';
-    pieces.forEach((item) => {
-      const token = String(item?.str || '');
-      if (token) {
-        lineBuffer += (lineBuffer ? ' ' : '') + token;
-      }
-      if (item?.hasEOL) {
-        const cleanLine = lineBuffer.trim();
-        if (cleanLine) lines.push(cleanLine);
-        lineBuffer = '';
-      }
-    });
-    if (lineBuffer.trim()) lines.push(lineBuffer.trim());
-
-    const textForPage = lines.join('\n');
-    const pageBody = textForPage
-      ? plainTextToParagraphHtml(textForPage)
-      : '<p><em>No extractable text found on this page.</em></p>';
-
-    pages.push(`
-      <section class="imported-pdf-page" data-pdf-page="${pageIndex}">
-        <h3 class="imported-pdf-page-title">Page ${pageIndex}</h3>
-        <div class="imported-pdf-page-body">${pageBody}</div>
-      </section>
-    `);
-  }
-
-  return pages.join('') || '<p><em>No extractable text found in this PDF.</em></p>';
-}
-
-async function parseImportedFileToHtml(file) {
-  const kind = detectImportFileType(file);
-  if (!kind) {
-    throw new Error('Unsupported file type. Use PDF, TXT, HTML, MD, or DOCX.');
-  }
-
-  if (kind === 'txt') {
-    const text = await readFileAsText(file);
-    return { kind, html: plainTextToParagraphHtml(text) };
-  }
-
-  if (kind === 'html') {
-    const text = await readFileAsText(file);
-    const html = sanitizeImportedHtml(text);
-    return { kind, html: html || '<p><br></p>' };
-  }
-
-  if (kind === 'md') {
-    const text = await readFileAsText(file);
-    const html = await convertMarkdownToHtml(text);
-    return { kind, html: html || '<p><br></p>' };
-  }
-
-  const binary = await readFileAsArrayBuffer(file);
-  if (kind === 'docx') {
-    const html = await convertDocxToHtml(binary);
-    return { kind, html: html || '<p><br></p>' };
-  }
-  if (kind === 'pdf') {
-    const html = await convertPdfToHtml(binary);
-    return { kind, html: html || '<p><br></p>' };
-  }
-
-  throw new Error('Unsupported file type. Use PDF, TXT, HTML, MD, or DOCX.');
-}
-
-function ensureInsertionPointInEditable(editable) {
-  if (!editable) return false;
-  const selection = window.getSelection();
-  if (selection && selection.rangeCount > 0 && isRangeInsideEditable(editable, selection.getRangeAt(0))) {
-    return true;
-  }
-  if (!selection) return false;
-  const range = document.createRange();
-  range.selectNodeContents(editable);
-  range.collapse(false);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  return true;
-}
-
-async function showSignatureCaptureDialog() {
-  return showCustomInteractionDialog({
-    title: 'Add Signature',
-    message: 'Draw your signature below, then insert it into the document.',
-    icon: 'iconoir-edit-pencil',
-    cancelValue: '',
-    allowBackdropClose: true,
-    buildControls: ({ controlsEl, closeDialog }) => {
-      const padWrap = document.createElement('div');
-      padWrap.className = 'signature-pad-wrap';
-
-      const canvas = document.createElement('canvas');
-      canvas.className = 'signature-pad-canvas';
-      canvas.width = 900;
-      canvas.height = 260;
-      padWrap.appendChild(canvas);
-      controlsEl.appendChild(padWrap);
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        closeDialog('');
-        return;
-      }
-
-      const resetCanvas = () => {
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.lineWidth = 4;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.strokeStyle = '#111827';
-      };
-      resetCanvas();
-
-      let isDrawing = false;
-      let hasInk = false;
-      const getPoint = (event) => {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        return {
-          x: (event.clientX - rect.left) * scaleX,
-          y: (event.clientY - rect.top) * scaleY
-        };
-      };
-
-      canvas.addEventListener('pointerdown', (event) => {
-        event.preventDefault();
-        isDrawing = true;
-        const { x, y } = getPoint(event);
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        if (canvas.setPointerCapture) {
-          canvas.setPointerCapture(event.pointerId);
-        }
-      });
-
-      canvas.addEventListener('pointermove', (event) => {
-        if (!isDrawing) return;
-        event.preventDefault();
-        const { x, y } = getPoint(event);
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        hasInk = true;
-        const useBtn = controlsEl.querySelector('.signature-pad-use-btn');
-        if (useBtn) useBtn.disabled = false;
-      });
-
-      const stopDrawing = (event) => {
-        if (event) event.preventDefault();
-        isDrawing = false;
-      };
-      canvas.addEventListener('pointerup', stopDrawing);
-      canvas.addEventListener('pointercancel', stopDrawing);
-      canvas.addEventListener('pointerleave', stopDrawing);
-
-      const actions = document.createElement('div');
-      actions.className = 'custom-alert-dialog-actions';
-
-      const cancelBtn = createCustomDialogButton('Cancel', 'secondary');
-      const clearBtn = createCustomDialogButton('Clear', 'ghost');
-      const insertBtn = createCustomDialogButton('Insert Signature', 'primary');
-      insertBtn.classList.add('signature-pad-use-btn');
-      insertBtn.disabled = true;
-
-      cancelBtn.addEventListener('click', () => closeDialog(''));
-      clearBtn.addEventListener('click', () => {
-        hasInk = false;
-        insertBtn.disabled = true;
-        resetCanvas();
-      });
-      insertBtn.addEventListener('click', () => {
-        if (!hasInk) return;
-        closeDialog(canvas.toDataURL('image/png'));
-      });
-
-      actions.append(cancelBtn, clearBtn, insertBtn);
-      controlsEl.appendChild(actions);
-    }
   });
 }
 
@@ -4261,35 +3828,6 @@ function sanitizeAiSnippet(rawSnippet = '') {
     .trim();
 }
 
-function decodeHtmlEntities(rawValue = '') {
-  const decoder = document.createElement('textarea');
-  decoder.innerHTML = String(rawValue ?? '');
-  return decoder.value;
-}
-
-function normalizeAiDraftForInsertion(rawDraft = '') {
-  let normalized = sanitizeAiSnippet(rawDraft);
-  if (!normalized) return '';
-
-  const hasHtmlTag = (value) => /<\/?[a-z][^>]*>/i.test(value);
-
-  if (!hasHtmlTag(normalized) && /&lt;\/?[a-z][^&]*&gt;/i.test(normalized)) {
-    const decoded = decodeHtmlEntities(normalized);
-    if (hasHtmlTag(decoded)) {
-      normalized = decoded;
-    }
-  }
-
-  if (hasHtmlTag(normalized)) {
-    return normalized;
-  }
-
-  return escapeHtmlAttribute(normalized)
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\n/g, '<br>');
-}
-
 function createAiChangeBatchId() {
   return `ai-change-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -4655,53 +4193,6 @@ Rules:
   return result || { applied: false, content: baseContent };
 }
 
-async function applyAiReplacementToEditorRange(editor, targetRange, rawReplacementHtml) {
-  if (!editor || !targetRange) return false;
-
-  const withinEditor = editor.contains(targetRange.commonAncestorContainer) || targetRange.commonAncestorContainer === editor;
-  if (!withinEditor) return false;
-
-  const normalizedReplacement = normalizeAiDraftForInsertion(rawReplacementHtml);
-  if (!normalizedReplacement) return false;
-
-  if (pendingAiChangeBatch) {
-    await finalizeAiChangeBatch('save', { silent: true });
-  }
-
-  const aiBatchId = createAiChangeBatchId();
-  const beforeHtml = editor.innerHTML;
-  const replacementHtml = annotateHtmlForAiBatch(normalizedReplacement, aiBatchId);
-  if (!replacementHtml) return false;
-
-  const range = targetRange.cloneRange();
-  range.deleteContents();
-
-  const temp = document.createElement('div');
-  temp.innerHTML = replacementHtml;
-  const fragment = document.createDocumentFragment();
-  let node;
-  let lastNode = null;
-  while ((node = temp.firstChild)) {
-    lastNode = fragment.appendChild(node);
-  }
-  range.insertNode(fragment);
-
-  const selection = window.getSelection();
-  selection?.removeAllRanges();
-  if (lastNode) {
-    const cursorRange = document.createRange();
-    cursorRange.setStartAfter(lastNode);
-    cursorRange.collapse(true);
-    selection?.addRange(cursorRange);
-  }
-
-  beginAiChangeBatch(beforeHtml, aiBatchId);
-  ensureResizableImages(editor);
-  scheduleAiChangeControlRender();
-  scheduleCommentHighlightsRender();
-  return true;
-}
-
 async function copyTextToClipboard(text) {
   const safeText = String(text || '');
   if (!safeText) return false;
@@ -4961,172 +4452,6 @@ function setupEditorListeners() {
   const aiTrigger = document.getElementById('aiTrigger');
   const aiInput = document.getElementById('aiInput');
   const aiSend = document.getElementById('aiSend');
-  const editorArea = document.querySelector('.editor-area');
-  const importBtn2 = document.getElementById('importBtn2');
-  const pdfFormModeBtn = document.getElementById('pdfFormModeBtn');
-  const pdfFormTools = document.getElementById('pdfFormTools');
-  const pdfFormAddCheckboxBtn = document.getElementById('pdfFormAddCheckboxBtn');
-  const pdfFormAddSignatureBtn = document.getElementById('pdfFormAddSignatureBtn');
-  const canEditDocument = String(editor?.getAttribute('contenteditable')) === 'true';
-
-  const detectImportedFileTypeFromEditor = () => {
-    const marker = editor?.querySelector('[data-import-filetype]');
-    return String(marker?.getAttribute('data-import-filetype') || '').toLowerCase() || null;
-  };
-
-  const syncPdfFormModeUi = () => {
-    const isPdfImport = importedDocumentFileType === 'pdf';
-    const allowFormMode = canEditDocument && isPdfImport;
-
-    if (!allowFormMode && pdfFormModeEnabled) {
-      pdfFormModeEnabled = false;
-    }
-
-    if (pdfFormModeBtn) {
-      pdfFormModeBtn.style.display = allowFormMode ? 'inline-flex' : 'none';
-      pdfFormModeBtn.classList.toggle('is-active', allowFormMode && pdfFormModeEnabled);
-      pdfFormModeBtn.setAttribute('aria-pressed', allowFormMode && pdfFormModeEnabled ? 'true' : 'false');
-    }
-
-    if (pdfFormTools) {
-      pdfFormTools.style.display = allowFormMode && pdfFormModeEnabled ? 'flex' : 'none';
-    }
-
-    if (editorArea) {
-      editorArea.classList.toggle('pdf-form-mode', allowFormMode && pdfFormModeEnabled);
-    }
-  };
-
-  const setPdfFormMode = (enabled, { notify = true } = {}) => {
-    if (!canEditDocument || importedDocumentFileType !== 'pdf') {
-      pdfFormModeEnabled = false;
-      syncPdfFormModeUi();
-      if (notify) showCustomAlert('PDF form mode is available after importing a PDF');
-      return;
-    }
-
-    pdfFormModeEnabled = !!enabled;
-    syncPdfFormModeUi();
-    if (notify) {
-      showCustomAlert(pdfFormModeEnabled ? 'PDF form mode enabled' : 'PDF form mode disabled');
-    }
-  };
-
-  const handleImportDocument = async () => {
-    if (!canEditDocument) {
-      showCustomAlert('You do not have permission to import into this document');
-      return;
-    }
-
-    const file = await pickFileFromDevice(IMPORT_FILE_ACCEPT);
-    if (!file) return;
-
-    const existingText = String(editor?.textContent || '').replace(/\u200B/g, '').trim();
-    if (existingText) {
-      const shouldReplace = await showCustomConfirm('Importing will replace the current document content. Continue?', {
-        title: 'Replace content',
-        confirmLabel: 'Import',
-        cancelLabel: 'Cancel'
-      });
-      if (!shouldReplace) return;
-    }
-
-    try {
-      const parsed = await withGlobalLoading(`Importing ${file.name}...`, async () => parseImportedFileToHtml(file));
-
-      if (pendingAiChangeBatch) {
-        await finalizeAiChangeBatch('save', { silent: true });
-      }
-
-      const wrappedHtml = `
-        <div class="imported-document-root" data-import-filetype="${escapeHtmlAttribute(parsed.kind)}">
-          ${parsed.html || '<p><br></p>'}
-        </div>
-      `;
-      editor.innerHTML = wrappedHtml;
-      ensureResizableImages(editor);
-      triggerEditableInput(editor);
-
-      importedDocumentFileType = parsed.kind;
-      if (importedDocumentFileType !== 'pdf') {
-        pdfFormModeEnabled = false;
-      }
-      syncPdfFormModeUi();
-
-      const nextTitle = String(file.name || '').replace(/\.[^/.]+$/, '').trim();
-      if (nextTitle && docTitle && docTitle.value.trim() !== nextTitle) {
-        docTitle.value = nextTitle;
-        docTitle.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-
-      showCustomAlert(`${file.name} imported`);
-    } catch (error) {
-      console.error('Import failed:', error);
-      showCustomAlert(error?.message || 'Failed to import file');
-    }
-  };
-
-  importedDocumentFileType = detectImportedFileTypeFromEditor();
-  if (importedDocumentFileType !== 'pdf') {
-    pdfFormModeEnabled = false;
-  }
-  syncPdfFormModeUi();
-
-  if (importBtn2) {
-    importBtn2.addEventListener('click', handleImportDocument);
-  }
-
-  if (pdfFormModeBtn) {
-    pdfFormModeBtn.addEventListener('click', () => {
-      setPdfFormMode(!pdfFormModeEnabled);
-    });
-  }
-
-  if (pdfFormAddCheckboxBtn) {
-    pdfFormAddCheckboxBtn.addEventListener('click', () => {
-      if (!pdfFormModeEnabled) {
-        showCustomAlert('Enable PDF form mode to add form fields');
-        return;
-      }
-
-      ensureInsertionPointInEditable(editor);
-      const inserted = insertHtmlIntoEditable(
-        editor,
-        null,
-        '<span class="pdf-form-checkbox" contenteditable="false"><input type="checkbox" aria-label="Form checkbox"></span>&nbsp;'
-      );
-      if (!inserted) {
-        showCustomAlert('Could not insert checkbox');
-        return;
-      }
-      triggerEditableInput(editor);
-    });
-  }
-
-  if (pdfFormAddSignatureBtn) {
-    pdfFormAddSignatureBtn.addEventListener('click', async () => {
-      if (!pdfFormModeEnabled) {
-        showCustomAlert('Enable PDF form mode to add form fields');
-        return;
-      }
-
-      const dataUrl = await showSignatureCaptureDialog();
-      if (!dataUrl) return;
-
-      ensureInsertionPointInEditable(editor);
-      const signatureHtml = `
-        <span class="pdf-form-signature" contenteditable="false">
-          <img src="${escapeHtmlAttribute(dataUrl)}" alt="Signature" />
-        </span>&nbsp;
-      `;
-      const inserted = insertHtmlIntoEditable(editor, null, signatureHtml);
-      if (!inserted) {
-        showCustomAlert('Could not insert signature');
-        return;
-      }
-      triggerEditableInput(editor);
-    });
-  }
 
   // Sidebar button handlers
   const sidebarBackBtn = document.getElementById('sidebarBackBtn');
@@ -5622,16 +4947,6 @@ function setupEditorListeners() {
   }
 
   const handleToolbarMenuAction = async (menuAction) => {
-    if (menuAction === 'file-import') {
-      await handleImportDocument();
-      return;
-    }
-
-    if (menuAction === 'file-pdf-form-mode') {
-      setPdfFormMode(!pdfFormModeEnabled);
-      return;
-    }
-
     if (menuAction === 'file-save') {
       await updateCurrentDoc({ content: editor.innerHTML });
       if (collaborationManager) {
@@ -6002,20 +5317,12 @@ function setupEditorListeners() {
   });
 
   bindAiChangeControlResize();
+  const editorArea = document.querySelector('.editor-area');
   if (editorArea) {
     editorArea.addEventListener('scroll', scheduleAiChangeControlRender);
   }
 
   editor.addEventListener('input', (e) => {
-    const nextImportedType = detectImportedFileTypeFromEditor();
-    if (nextImportedType !== importedDocumentFileType) {
-      importedDocumentFileType = nextImportedType;
-      if (importedDocumentFileType !== 'pdf') {
-        pdfFormModeEnabled = false;
-      }
-      syncPdfFormModeUi();
-    }
-
     if (!pendingAiChangeBatch) {
       updateCurrentDoc({ content: editor.innerHTML });
     }
@@ -6513,48 +5820,6 @@ function setupEditorListeners() {
   const editPopupSubmit = document.getElementById('editPopupSubmit');
   let selectedTextRange = null;
   let selectedText = '';
-  const positionTextEditPopup = (range) => {
-    if (!range) return;
-    const rect = range.getBoundingClientRect();
-    if (!rect || (rect.width === 0 && rect.height === 0)) return;
-
-    const viewportPadding = 12;
-    const popupGap = 14;
-    const wasVisible = textEditPopup.classList.contains('visible');
-
-    if (!wasVisible) {
-      textEditPopup.classList.add('visible');
-    }
-    textEditPopup.style.visibility = 'hidden';
-
-    const popupRect = textEditPopup.getBoundingClientRect();
-    const popupWidth = popupRect.width || 280;
-    const popupHeight = popupRect.height || 220;
-
-    let top = rect.top - popupHeight - popupGap;
-    let placement = 'above';
-    if (top < viewportPadding) {
-      top = rect.bottom + popupGap;
-      placement = 'below';
-    }
-
-    if (top + popupHeight > window.innerHeight - viewportPadding) {
-      top = Math.max(viewportPadding, window.innerHeight - popupHeight - viewportPadding);
-    }
-
-    let left = rect.left + (rect.width / 2) - (popupWidth / 2);
-    const maxLeft = Math.max(viewportPadding, window.innerWidth - popupWidth - viewportPadding);
-    left = Math.max(viewportPadding, Math.min(left, maxLeft));
-
-    textEditPopup.style.top = `${Math.round(top)}px`;
-    textEditPopup.style.left = `${Math.round(left)}px`;
-    textEditPopup.dataset.placement = placement;
-    textEditPopup.style.visibility = '';
-
-    if (!wasVisible) {
-      textEditPopup.classList.remove('visible');
-    }
-  };
 
   // Show popup when text is selected
   document.addEventListener('mouseup', (e) => {
@@ -6571,7 +5836,15 @@ function setupEditorListeners() {
       if (editor.contains(range.commonAncestorContainer)) {
         selectedText = text;
         selectedTextRange = range.cloneRange();
-        positionTextEditPopup(selectedTextRange);
+
+        // Position the popup near the selection
+        const rect = range.getBoundingClientRect();
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+
+        // Position above the selection
+        textEditPopup.style.top = `${rect.top + scrollTop - textEditPopup.offsetHeight - 10}px`;
+        textEditPopup.style.left = `${rect.left + scrollLeft}px`;
 
         // Show the popup
         textEditPopup.classList.add('visible');
@@ -6598,7 +5871,6 @@ function setupEditorListeners() {
   // Handle edit actions
   const handleEditAction = async (action, customPrompt = '') => {
     if (!selectedText || !selectedTextRange) return;
-    const targetRange = selectedTextRange.cloneRange();
 
     let prompt = '';
 
@@ -6651,27 +5923,18 @@ function setupEditorListeners() {
     try {
       const selectedModel = aiModelSelector?.value || savedModel;
       const response = await generateContent(prompt, selectedModel);
-      const draftHtml = normalizeAiDraftForInsertion(response);
-      if (!draftHtml) {
-        alert('AI returned empty text');
-        return;
-      }
+      const editedText = response.trim();
 
-      const preview = await showAiApplyPreviewDialog({
-        title: 'Review AI edit',
-        description: 'Edit this suggestion if needed, then insert it.',
-        initialContent: draftHtml,
-        insertLabel: 'Insert',
-        selectedModel
-      });
-      if (!preview.applied) return;
+      // Restore the selection and replace the text
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(selectedTextRange);
 
-      const inserted = await applyAiReplacementToEditorRange(editor, targetRange, preview.content);
-      if (!inserted) {
-        alert('Could not apply the AI edit to this selection');
-        return;
-      }
-      showCustomAlert('AI changes highlighted. Use Save all or Revert all.');
+      // Replace the selected text
+      document.execCommand('insertText', false, editedText);
+
+      // Update document
+      updateCurrentDoc({ content: editor.innerHTML });
 
       // Clear selection
       selectedText = '';
@@ -6694,7 +5957,6 @@ function setupEditorListeners() {
         // Show custom input
         editPopupCustom.classList.add('visible');
         editPopupInput.focus();
-        requestAnimationFrame(() => positionTextEditPopup(selectedTextRange));
       } else {
         // Execute quick action
         handleEditAction(action);
@@ -6707,7 +5969,6 @@ function setupEditorListeners() {
     e.stopPropagation();
     editPopupCustom.classList.remove('visible');
     editPopupInput.value = '';
-    requestAnimationFrame(() => positionTextEditPopup(selectedTextRange));
   });
 
   // Custom edit submit
@@ -8313,8 +7574,10 @@ Rules:
       || localStorage.getItem('proedit_ai_model')
       || 'gemini-2.5-flash';
     const response = await generateContent(prompt, selectedModel);
-    const revisedHtml = normalizeAiDraftForInsertion(response);
-    if (!revisedHtml) {
+    let revisedText = String(response || '').trim();
+    revisedText = revisedText.replace(/^```(?:text)?/i, '').replace(/```$/i, '').trim();
+
+    if (!revisedText) {
       alert('AI returned empty text');
       return;
     }
@@ -8322,7 +7585,7 @@ Rules:
     const preview = await showAiApplyPreviewDialog({
       title: 'Review AI fix',
       description: 'Edit this fix if needed, then apply it to the selected text.',
-      initialContent: revisedHtml,
+      initialContent: revisedText,
       insertLabel: 'Apply Fix',
       selectedModel
     });
@@ -8330,13 +7593,41 @@ Rules:
 
     const editor = document.getElementById('editor');
     if (!editor) return;
-    const inserted = await applyAiReplacementToEditorRange(editor, anchor.range, preview.content);
-    if (!inserted) {
-      alert('Could not apply this AI fix');
-      return;
+
+    if (pendingAiChangeBatch) {
+      await finalizeAiChangeBatch('save', { silent: true });
     }
+
+    const aiBatchId = createAiChangeBatchId();
+    const beforeHtml = editor.innerHTML;
+    const replacementHtml = annotateHtmlForAiBatch(preview.content, aiBatchId);
+
+    const range = anchor.range.cloneRange();
+    range.deleteContents();
+    const temp = document.createElement('div');
+    temp.innerHTML = replacementHtml;
+    const fragment = document.createDocumentFragment();
+    let node;
+    let lastNode = null;
+    while ((node = temp.firstChild)) {
+      lastNode = fragment.appendChild(node);
+    }
+    range.insertNode(fragment);
+
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    if (lastNode) {
+      const cursorRange = document.createRange();
+      cursorRange.setStartAfter(lastNode);
+      cursorRange.collapse(true);
+      selection.addRange(cursorRange);
+    }
+
+    beginAiChangeBatch(beforeHtml, aiBatchId);
+    scheduleAiChangeControlRender();
+    scheduleCommentHighlightsRender();
     activeCommentId = commentId;
-    showCustomAlert('AI changes highlighted. Use Save all or Revert all.');
+    alert('AI fix inserted and highlighted');
     await loadComments({ focusCommentId: commentId });
   } catch (error) {
     console.error('Failed to apply AI fix:', error);
