@@ -958,7 +958,7 @@ function renderLanding() {
 
     <section class="pro-try-section" id="proTrySection">
       <div class="pro-try-copy">
-        <h2>Try ProEdit in 5 Seconds</h2>
+        <h2>Try ProEdit in a couple of clicks</h2>
         <p>
           Walk through the core ProEdit flow with a guided demo.
         </p>
