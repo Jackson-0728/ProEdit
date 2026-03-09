@@ -430,6 +430,237 @@ const TEMPLATE_LIBRARY = {
   }
 };
 
+const TRY_DEMO_CREATE_PROMPT = 'Create a launch brief for ProEdit beta with sections for overview, timeline, owners, and success metrics.';
+const TRY_DEMO_EDITOR_PROMPT = 'Make this document more beautiful and easier to scan while keeping all of the same information.';
+const TRY_DEMO_STYLE_CHOICES = [
+  {
+    id: 'minimal',
+    label: 'Minimal',
+    description: 'Clean spacing and quiet hierarchy.'
+  },
+  {
+    id: 'formal',
+    label: 'Formal',
+    description: 'Executive polish with sharper structure.'
+  },
+  {
+    id: 'bold',
+    label: 'Bold',
+    description: 'Stronger contrast and more visual emphasis.'
+  }
+];
+const TRY_DEMO_LAYOUTS = [
+  {
+    id: 'launch',
+    title: 'Launch Brief',
+    description: 'Structured launch plan with milestones, owners, and measurable goals.',
+    gradient: 'blue',
+    icon: 'iconoir-rocket',
+    docTitle: 'ProEdit Beta Launch Brief',
+    eyebrow: 'Beta Launch',
+    lead: 'Introduce ProEdit to a focused beta audience and validate onboarding clarity in the first two weeks.',
+    sections: [
+      {
+        title: 'Launch Window',
+        text: 'Target the first week of April with a focused creator, founder, and operator audience.'
+      },
+      {
+        title: 'Core Actions',
+        items: [
+          'Finalize landing page copy and waitlist messaging.',
+          'Coordinate launch posts across LinkedIn and founder communities.',
+          'Collect beta feedback after first use and activation.'
+        ]
+      },
+      {
+        title: 'Success Metric',
+        text: 'Reach 1,000 qualified signups, keep activation above 25%, and capture at least 30 structured feedback responses.'
+      }
+    ]
+  },
+  {
+    id: 'rollout',
+    title: 'Marketing Rollout',
+    description: 'Channel-by-channel rollout plan for awareness, activation, and follow-up.',
+    gradient: 'purple',
+    icon: 'iconoir-megaphone',
+    docTitle: 'ProEdit Marketing Rollout',
+    eyebrow: 'Growth Campaign',
+    lead: 'Turn early launch attention into qualified signups and first-session activation with a tighter rollout plan.',
+    sections: [
+      {
+        title: 'Priority Channels',
+        items: [
+          'LinkedIn founder posts',
+          'Email to the waitlist',
+          'Private founder and creator groups'
+        ]
+      },
+      {
+        title: 'Rollout Message',
+        text: 'Share the product story, explain who ProEdit is for, and reinforce that beta access is limited.'
+      },
+      {
+        title: 'Measurement',
+        text: 'Track click-through rate, signup conversion, and first document created on a daily launch dashboard.'
+      }
+    ]
+  },
+  {
+    id: 'overview',
+    title: 'Executive Overview',
+    description: 'One-page stakeholder summary for launch timing, risk, and expected outcomes.',
+    gradient: 'teal',
+    icon: 'iconoir-graph-up',
+    docTitle: 'ProEdit Executive Overview',
+    eyebrow: 'Stakeholder Summary',
+    lead: 'Prepare a focused beta launch with clear risks, expected outcomes, and a faster feedback loop.',
+    sections: [
+      {
+        title: 'Why Now',
+        text: 'The product workflow is stable enough for early users and direct beta feedback will sharpen positioning and onboarding.'
+      },
+      {
+        title: 'Key Risks',
+        items: [
+          'Messaging may still be too broad.',
+          'Activation after signup could stall.',
+          'Early feedback may not be routed fast enough.'
+        ]
+      },
+      {
+        title: 'Expected Outcome',
+        text: 'Validate positioning, improve the first-use experience, and leave launch month with a clearer roadmap.'
+      }
+    ]
+  }
+];
+
+function getTryDemoLayoutCardsMarkup() {
+  return TRY_DEMO_LAYOUTS.map((layout, index) => `
+    <div class="template-card layout-option pro-demo-layout-option" data-layout-index="${index}">
+      <div class="template-icon card-gradient-${layout.gradient}">
+        <i class="${layout.icon || 'iconoir-sparks'}"></i>
+      </div>
+      <div class="template-content">
+        <h3>${layout.title}</h3>
+        <p>${layout.description}</p>
+        <span class="pro-demo-layout-eyebrow">${layout.eyebrow}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+function getTryDemoStyleChoice(styleId) {
+  return TRY_DEMO_STYLE_CHOICES.find((choice) => choice.id === styleId) || TRY_DEMO_STYLE_CHOICES[0];
+}
+
+function getTryDemoLayout(layoutIndex) {
+  return TRY_DEMO_LAYOUTS[layoutIndex] || TRY_DEMO_LAYOUTS[0];
+}
+
+function getTryDemoPlainDocumentMarkup(layout) {
+  const safeLayout = layout || getTryDemoLayout(0);
+  const sectionsMarkup = safeLayout.sections.map((section) => {
+    const textMarkup = section.text
+      ? `<p style="margin: 0 0 0.8rem;">${escapeHtmlValue(section.text)}</p>`
+      : '';
+    const itemsMarkup = Array.isArray(section.items) && section.items.length > 0
+      ? `<p style="margin: 0 0 0.8rem;">${section.items.map((item) => `- ${escapeHtmlValue(item)}`).join('<br>')}</p>`
+      : '';
+
+    return `
+      <p style="margin: 0 0 0.35rem;"><strong>${escapeHtmlValue(section.title)}</strong></p>
+      ${textMarkup}
+      ${itemsMarkup}
+    `;
+  }).join('');
+
+  return `
+    <h1>${escapeHtmlValue(safeLayout.docTitle)}</h1>
+    <p>${escapeHtmlValue(safeLayout.lead)}</p>
+    ${sectionsMarkup}
+  `;
+}
+
+function getTryDemoStyledDocumentMarkup(layout, styleId = 'formal') {
+  const safeLayout = layout || getTryDemoLayout(0);
+  const styleChoice = getTryDemoStyleChoice(styleId);
+  const themes = {
+    minimal: {
+      accent: '#2563EB',
+      accentSoft: '#EFF6FF',
+      border: '#DBEAFE',
+      heroBg: '#FFFFFF',
+      heroColor: '#0F172A',
+      sectionBg: '#F8FAFC',
+      sectionShadow: '0 10px 24px rgba(15, 23, 42, 0.06)',
+      pageBg: '#FFFFFF',
+      badgeBg: '#EFF6FF',
+      badgeColor: '#1D4ED8'
+    },
+    formal: {
+      accent: '#0F172A',
+      accentSoft: '#E2E8F0',
+      border: '#CBD5E1',
+      heroBg: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+      heroColor: '#FFFFFF',
+      sectionBg: '#FFFFFF',
+      sectionShadow: '0 12px 28px rgba(15, 23, 42, 0.08)',
+      pageBg: '#F8FAFC',
+      badgeBg: 'rgba(255,255,255,0.16)',
+      badgeColor: '#FFFFFF'
+    },
+    bold: {
+      accent: '#7C3AED',
+      accentSoft: '#F3E8FF',
+      border: '#DDD6FE',
+      heroBg: 'linear-gradient(135deg, #7C3AED 0%, #EC4899 100%)',
+      heroColor: '#FFFFFF',
+      sectionBg: '#FFFFFF',
+      sectionShadow: '0 14px 32px rgba(124, 58, 237, 0.14)',
+      pageBg: '#FCFAFF',
+      badgeBg: 'rgba(255,255,255,0.18)',
+      badgeColor: '#FFFFFF'
+    }
+  };
+  const theme = themes[styleChoice.id] || themes.formal;
+
+  const renderItems = (items = []) => {
+    if (!Array.isArray(items) || items.length === 0) return '';
+    return `
+      <ul style="margin: 0; padding-left: 1.1rem; color: #334155; line-height: 1.7;">
+        ${items.map((item) => `<li style="margin: 0.35rem 0;">${escapeHtmlValue(item)}</li>`).join('')}
+      </ul>
+    `;
+  };
+
+  const sectionsMarkup = safeLayout.sections.map((section, index) => `
+    <section style="margin-top: 1rem; border: 1px solid ${theme.border}; border-radius: 18px; padding: 1rem 1rem 1.05rem; background: ${theme.sectionBg}; box-shadow: ${theme.sectionShadow};">
+      <div style="display: inline-flex; align-items: center; justify-content: center; min-width: 38px; height: 24px; padding: 0 0.55rem; border-radius: 999px; background: ${theme.accentSoft}; color: ${theme.accent}; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;">
+        0${index + 1}
+      </div>
+      <h2 style="margin: 0.7rem 0 0.55rem; font-size: 1.15rem; line-height: 1.25; color: #0F172A;">${escapeHtmlValue(section.title)}</h2>
+      ${section.text ? `<p style="margin: 0 0 0.8rem; color: #334155; line-height: 1.7;">${escapeHtmlValue(section.text)}</p>` : ''}
+      ${renderItems(section.items)}
+    </section>
+  `).join('');
+
+  return `
+    <div style="width: 100%; max-width: 100%; box-sizing: border-box; background: ${theme.pageBg}; border-radius: 26px; padding: 0.25rem 0 0.4rem;">
+      <section style="border: 1px solid ${theme.border}; border-radius: 24px; padding: 1.35rem; background: ${theme.heroBg}; color: ${theme.heroColor}; box-shadow: ${theme.sectionShadow};">
+        <div style="display: flex; flex-wrap: wrap; gap: 0.55rem; align-items: center; margin-bottom: 0.85rem;">
+          <span style="display: inline-flex; align-items: center; height: 28px; padding: 0 0.8rem; border-radius: 999px; background: ${theme.badgeBg}; color: ${theme.badgeColor}; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;">${escapeHtmlValue(safeLayout.eyebrow)}</span>
+          <span style="display: inline-flex; align-items: center; height: 28px; padding: 0 0.8rem; border-radius: 999px; border: 1px solid ${theme.border}; background: rgba(255,255,255,0.12); color: ${theme.badgeColor}; font-size: 11px; font-weight: 700;">${escapeHtmlValue(styleChoice.label)} Style</span>
+        </div>
+        <h1 style="margin: 0 0 0.7rem; font-size: 2rem; line-height: 1.08; letter-spacing: -0.03em; color: inherit;">${escapeHtmlValue(safeLayout.docTitle)}</h1>
+        <p style="margin: 0; max-width: 58ch; color: ${theme.heroColor}; opacity: 0.96; line-height: 1.72;">${escapeHtmlValue(safeLayout.lead)}</p>
+      </section>
+      ${sectionsMarkup}
+    </div>
+  `;
+}
+
 // --- INITIALIZATION ---
 
 window.renderLogin = renderLogin; // Expose to global scope for inline onclick handlers
@@ -653,6 +884,7 @@ function renderLanding() {
     <nav class="pro-landing-nav">
       <div class="pro-landing-brand">ProEdit</div>
       <div class="pro-landing-nav-actions">
+        <button type="button" class="pro-landing-try-btn" id="proNavTryBtn">Try Without Registration</button>
         <button class="pro-landing-login-btn" onclick="renderLogin({ mode: 'login' })">Login</button>
         <button class="pro-landing-nav-btn" onclick="renderLogin({ mode: 'signup' })">Get Started</button>
       </div>
@@ -666,6 +898,7 @@ function renderLanding() {
       </p>
 
       <div class="pro-hero-cta" id="proHeroButtons">
+        <button type="button" class="pro-btn pro-btn-tertiary" id="proHeroTryBtn">Try Without Registration</button>
         <button class="pro-btn pro-btn-primary" onclick="renderLogin({ mode: 'signup' })">Start Writing for Free</button>
         <button class="pro-btn pro-btn-secondary" onclick="window.open('https://github.com/Jackson-0728/ProEdit', '_blank', 'noopener,noreferrer')">View on GitHub</button>
       </div>
@@ -687,15 +920,24 @@ function renderLanding() {
         <div class="pro-features-title">Features</div>
         <div class="pro-features-cards" id="proFeatureCards">
           <article class="pro-feature-card">
-            <h3>AI Assistant</h3>
+            <div class="pro-feature-head">
+              <span class="pro-feature-icon"><i class="iconoir-sparks"></i></span>
+              <h3>AI Assistant</h3>
+            </div>
             <p>Generate content, summarize text, and get writing suggestions instantly. Context-aware and intelligent.</p>
           </article>
           <article class="pro-feature-card">
-            <h3>Cloud Sync</h3>
+            <div class="pro-feature-head">
+              <span class="pro-feature-icon"><i class="iconoir-share-android"></i></span>
+              <h3>Cloud Sync</h3>
+            </div>
             <p>Access your documents anywhere. Secure infrastructure with real-time synchronization.</p>
           </article>
           <article class="pro-feature-card">
-            <h3>Rich Editor</h3>
+            <div class="pro-feature-head">
+              <span class="pro-feature-icon"><i class="iconoir-edit-pencil"></i></span>
+              <h3>Rich Editor</h3>
+            </div>
             <p>A distraction-free writing experience with powerful formatting tools built for professionals.</p>
           </article>
         </div>
@@ -714,72 +956,242 @@ function renderLanding() {
       </div>
     </section>
 
-     <section class="pro-try-section" id="proTrySection">
+    <section class="pro-try-section" id="proTrySection">
       <div class="pro-try-copy">
         <h2>Try ProEdit in 5 Seconds</h2>
         <p>
-          This uses the same UI as the real editor. The prompt is fixed and pre-wired so you can test the interaction instantly.
-          Press <strong>Enter</strong> or <strong>Send</strong> to run it.
+          Walk through the core ProEdit flow with a guided demo.
         </p>
       </div>
-      <div class="pro-try-shell">
-        <div class="editor-layout editor-layout-editor pro-try-editor-shell">
-          <div class="top-bar">
-            <input type="text" class="doc-title" value="Launch Plan Draft" readonly aria-label="Demo document title" />
-            <div class="top-bar-presence">
-              <span class="presence-label">Demo</span>
-              <div class="avatars-stack">
-                <div class="avatar" style="background: #3B82F6;" title="Alex">A</div>
-                <div class="avatar" style="background: #10B981;" title="ProEdit Bot">P</div>
-              </div>
+      <div class="pro-try-shell" id="proTryShell">
+        <div class="pro-try-window-bar">
+          <div class="pro-try-window-controls" aria-label="Demo window controls">
+            <div class="pro-try-close-group">
+              <button type="button" class="pro-try-window-dot is-close" id="proTryCloseControl" aria-label="Close demo preview"></button>
+              <div class="pro-try-close-note" id="proTryCloseNote">Why would you want to close this?</div>
+            </div>
+            <button type="button" class="pro-try-window-dot is-minimize" id="proTryMinimizeControl" aria-label="Minimize demo preview"></button>
+            <button type="button" class="pro-try-window-dot is-fullscreen" id="proTryFullscreenControl" aria-label="Enter fullscreen"></button>
+          </div>
+        </div>
+
+        <div class="pro-try-minimized-panel" id="proTryMinimizedPanel" aria-hidden="true">
+          <span class="pro-try-minimized-label">Try ProEdit</span>
+          <button type="button" class="pro-btn pro-btn-primary pro-try-restore-btn" id="proTryRestoreBtn">Open</button>
+        </div>
+
+        <div class="pro-try-stage-wrap" id="proTryStageWrap">
+          <div class="pro-demo-stage is-guided" id="proDemoStage">
+          <div class="pro-demo-screen pro-demo-dashboard-screen is-active" id="proDemoDashboardScreen">
+            <div class="dashboard-layout pro-demo-dashboard-layout">
+              <aside class="dashboard-sidebar">
+                <div class="sidebar-header">
+                  <h1 class="sidebar-brand">ProEdit</h1>
+                </div>
+
+                <nav class="sidebar-nav">
+                  <a href="#" class="nav-link active">
+                    <i class="iconoir-home"></i>
+                    <span>Dashboard</span>
+                  </a>
+                  <a href="#" class="nav-link disabled">
+                    <i class="iconoir-folder"></i>
+                    <span>All Documents</span>
+                  </a>
+                  <a href="#" class="nav-link disabled">
+                    <i class="iconoir-layout-left"></i>
+                    <span>Templates</span>
+                  </a>
+                  <a href="#" class="nav-link disabled">
+                    <i class="iconoir-settings"></i>
+                    <span>Settings</span>
+                  </a>
+                </nav>
+
+                <div class="sidebar-footer">
+                  <div class="user-profile">
+                    <div class="user-avatar">D</div>
+                    <div class="user-info">
+                      <div class="user-name">Demo</div>
+                    </div>
+                  </div>
+                </div>
+              </aside>
+
+              <main class="dashboard-main">
+                <div class="dashboard-view pro-demo-dashboard-view">
+                  <header class="view-header">
+                    <div>
+                      <h1 class="view-title">Welcome to ProEdit Demo!</h1>
+                      <p class="view-subtitle">Here's a quick guided walkthrough of the core workflow.</p>
+                    </div>
+                    <div class="search-wrapper-dash">
+                      <i class="iconoir-search"></i>
+                      <input type="text" class="search-input-dash" placeholder="Search documents..." readonly>
+                    </div>
+                  </header>
+
+                  <section class="quick-start-section">
+                    <h2 class="section-title">Quick Start</h2>
+                    <div class="quick-start-grid">
+                      <div class="quick-start-card">
+                        <div class="card-image card-gradient-blue"></div>
+                        <div class="card-content">
+                          <h3>New Blank Document</h3>
+                          <p>Start writing from scratch.</p>
+                        </div>
+                      </div>
+                      <div class="quick-start-card" id="proDemoCreateCard">
+                        <div class="card-image card-gradient-purple" style="display: flex; align-items: center; justify-content: center;">
+                          <i class="iconoir-sparks" style="font-size: 24px; color: white;"></i>
+                        </div>
+                        <div class="card-content" style="padding: 1rem;">
+                          <h3 style="margin-bottom: 0.5rem;">Create with AI</h3>
+                          <div class="ai-create-input-wrapper pro-demo-create-input-wrap">
+                            <input type="text" id="proDemoCreateInput" placeholder="Describe your document idea..." readonly>
+                            <button type="button" id="proDemoCreateActionBtn" aria-label="Create with AI">
+                              <i class="iconoir-arrow-right"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+
+                  <section class="recent-docs-section">
+                    <div class="section-header">
+                      <h2 class="section-title">Recent Documents</h2>
+                      <button class="btn-primary" type="button">
+                        <i class="iconoir-plus"></i>
+                        Create New
+                      </button>
+                    </div>
+                    <div class="recent-docs-list">
+                      <div class="recent-doc-item">
+                        <div class="doc-main-info">
+                          <div class="doc-icon"><i class="iconoir-page"></i></div>
+                          <div class="doc-details">
+                            <span class="doc-title">Demo Launch Notes</span>
+                            <span class="doc-meta">2 hours ago • 2.1 KB</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="recent-doc-item">
+                        <div class="doc-main-info">
+                          <div class="doc-icon"><i class="iconoir-page"></i></div>
+                          <div class="doc-details">
+                            <span class="doc-title">Beta Messaging Draft</span>
+                            <span class="doc-meta">Yesterday • 1.8 KB</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              </main>
             </div>
           </div>
 
-          <div class="editor-workspace">
-            <div class="circular-sidebar pro-try-sidebar" aria-hidden="true">
-              <button type="button" class="sidebar-icon" aria-label="Back" tabindex="-1"><i class="iconoir-arrow-left"></i></button>
-              <div class="sidebar-divider"></div>
-              <button type="button" class="sidebar-icon" aria-label="Share" tabindex="-1"><i class="iconoir-share-android"></i></button>
-              <button type="button" class="sidebar-icon" aria-label="Comments" tabindex="-1"><i class="iconoir-message-text"></i></button>
-              <button type="button" class="sidebar-icon" aria-label="Chat" tabindex="-1"><i class="iconoir-chat-bubble"></i></button>
-              <button type="button" class="sidebar-icon" aria-label="Deploy" tabindex="-1"><i class="iconoir-rocket"></i></button>
-            </div>
+          <div class="pro-demo-screen pro-demo-editor-screen" id="proDemoEditorScreen">
+            <div class="editor-layout editor-layout-editor pro-try-editor-shell" id="proDemoEditorShell">
+              <div class="top-bar">
+                <input type="text" class="doc-title" id="proDemoDocTitle" value="ProEdit Beta Launch Brief" readonly aria-label="Demo document title" />
+                <div class="top-bar-presence">
+                  <span class="presence-label">Demo</span>
+                  <div class="avatars-stack">
+                    <div class="avatar" style="background: #3B82F6;" title="Demo">D</div>
+                    <div class="avatar" style="background: #10B981;" title="AI">A</div>
+                  </div>
+                </div>
+              </div>
 
-            <div class="editor-container">
-              ${getFormattingToolbarMarkup({ toolbarId: 'proTryToolbar' })}
-              <div class="editor-area">
-                <div id="proTryEditor" contenteditable="false" spellcheck="false">
-                  <h2>Launch Plan Draft</h2>
-                  <p id="proTryParagraph">
-                    We should maybe launch soon and try many channels while keeping an eye on feedback, and hopefully engagement goes up over time.
-                  </p>
-                  <p>
-                    Goal: reach 1,000 qualified signups and improve activation week over week.
-                  </p>
+              <div class="editor-workspace">
+                <div class="circular-sidebar pro-try-sidebar" aria-hidden="true">
+                  <button type="button" class="sidebar-icon" aria-label="Back" tabindex="-1"><i class="iconoir-arrow-left"></i></button>
+                  <div class="sidebar-divider"></div>
+                  <button type="button" class="sidebar-icon" aria-label="Share" tabindex="-1"><i class="iconoir-share-android"></i></button>
+                  <button type="button" class="sidebar-icon" aria-label="Comments" tabindex="-1"><i class="iconoir-message-text"></i></button>
+                  <button type="button" class="sidebar-icon" aria-label="Chat" tabindex="-1"><i class="iconoir-chat-bubble"></i></button>
+                  <button type="button" class="sidebar-icon" aria-label="Deploy" tabindex="-1"><i class="iconoir-rocket"></i></button>
+                </div>
+
+                <div class="editor-container">
+                  ${getFormattingToolbarMarkup({ toolbarId: 'proTryToolbar' })}
+                  <div class="editor-area" id="proDemoEditorArea">
+                    <div id="proTryEditor" contenteditable="true" spellcheck="true"></div>
+                    <div class="pro-demo-ai-change-layer" id="proDemoAiChangeLayer"></div>
+                  </div>
+                </div>
+              </div>
+
+              <button type="button" class="ai-trigger" id="proDemoAiTrigger" title="Ask AI">
+                <i class="iconoir-sparks"></i>
+              </button>
+
+              <aside class="ai-popup pro-try-ai-popup" id="proTryAiModal">
+                <div class="ai-header">
+                  <div class="ai-title"><i class="iconoir-sparks"></i> AI Assistant</div>
+                  <div class="ai-controls">
+                    <button class="ai-btn-icon" id="proTryAiClose" title="Close"><i class="iconoir-xmark-circle"></i></button>
+                  </div>
+                </div>
+                <div class="ai-messages" id="proTryAiMessages">
+                  <div class="ai-message ai">Ask AI to make the selected draft clearer, more visual, or more polished.</div>
+                </div>
+                <div class="ai-input-area">
+                  <input
+                    id="proTryAiPrompt"
+                    class="ai-input"
+                    value=""
+                    readonly
+                  />
+                  <button type="button" class="ai-send" id="proTryAiSend" aria-label="Send prompt">
+                    <i class="iconoir-send"></i>
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </div>
+
+          <div class="pro-demo-layout-overlay" id="proDemoLayouts">
+            <div class="modal-card pro-demo-layout-card">
+              <div class="modal-header">
+                <h3>Select a Layout</h3>
+              </div>
+              <div class="modal-body">
+                <p class="pro-demo-layout-copy">Here are some options generated for you:</p>
+                <div class="templates-grid">
+                  ${getTryDemoLayoutCardsMarkup()}
                 </div>
               </div>
             </div>
           </div>
 
-          <aside class="ai-popup pro-try-ai-popup visible" id="proTryAiModal">
-            <div class="ai-header">
-              <div class="ai-title"><i class="iconoir-sparks"></i> AI Assistant</div>
+          <div class="pro-demo-guide" id="proDemoGuide">
+            <div class="pro-demo-guide-card">
+              <div class="pro-demo-guide-step" id="proDemoGuideStep">Step 1 of 5</div>
+              <h3 class="pro-demo-guide-title" id="proDemoGuideTitle"></h3>
+              <p class="pro-demo-guide-body" id="proDemoGuideBody"></p>
+              <div class="pro-demo-guide-actions" id="proDemoGuideActions"></div>
             </div>
-            <div class="ai-messages" id="proTryAiMessages">
-              <div class="ai-message ai">Ready to run demo actin.</div>
+          </div>
+
+          <div class="pro-demo-complete-overlay" id="proDemoCompleteOverlay">
+            <div class="pro-demo-complete-card">
+              <span class="pro-demo-complete-badge">Guided Tour Complete</span>
+              <h3>Great! You've learnt the basics of ProEdit!</h3>
+              <p>You created a document with AI, selected a layout, and refined it in the editor.</p>
+              <div class="pro-demo-complete-actions">
+                <button type="button" class="pro-btn pro-btn-primary" id="proDemoCreateAccountBtn">Create Account</button>
+                <button type="button" class="pro-btn pro-btn-secondary" id="proDemoRestartBtn">Restart</button>
+              </div>
+              </div>
             </div>
-            <div class="ai-input-area">
-              <input
-                id="proTryAiPrompt"
-                class="ai-input"
-                value="Rewrite the paragraph to be concise, specific, and action-oriented."
-                readonly
-              />
-              <button type="button" class="ai-send" id="proTryAiSend" aria-label="Send mock prompt">
-                <i class="iconoir-send"></i>
-              </button>
-            </div>
-          </aside>
+          </div>
+
+          <div class="pro-demo-confetti" id="proDemoConfetti" aria-hidden="true">
+            ${Array.from({ length: 20 }, (_, index) => `<span class="pro-demo-confetti-piece" style="--confetti-index:${index};"></span>`).join('')}
+          </div>
         </div>
       </div>
     </section>
@@ -807,17 +1219,114 @@ function initLandingExperience() {
   const landing = document.getElementById('proLandingPage');
   if (!landing) return;
 
+  const navTryBtn = document.getElementById('proNavTryBtn');
   const heroTypewriter = document.getElementById('proHeroTypewriter');
   const subtitle = document.getElementById('proHeroSubtitle');
   const buttons = document.getElementById('proHeroButtons');
+  const heroTryBtn = document.getElementById('proHeroTryBtn');
   const badge = document.getElementById('proProductHuntBadge');
   const indicator = document.getElementById('proScrollIndicator');
   const featuresSection = document.getElementById('proFeaturesSection');
   const featureCards = document.getElementById('proFeatureCards');
   const spotlightSection = document.getElementById('proSpotlightSection');
   const spotlightCard = document.getElementById('proSpotlightCard');
+  const trySection = document.getElementById('proTrySection');
+  const tryShell = document.getElementById('proTryShell');
+  const tryStageWrap = document.getElementById('proTryStageWrap');
+  const tryMinimizedPanel = document.getElementById('proTryMinimizedPanel');
+  const tryCloseControl = document.getElementById('proTryCloseControl');
+  const tryMinimizeControl = document.getElementById('proTryMinimizeControl');
+  const tryFullscreenControl = document.getElementById('proTryFullscreenControl');
+  const tryRestoreBtn = document.getElementById('proTryRestoreBtn');
+  const demoStage = document.getElementById('proDemoStage');
+  const demoDashboardScreen = document.getElementById('proDemoDashboardScreen');
+  const demoEditorScreen = document.getElementById('proDemoEditorScreen');
+  const demoCreateCard = document.getElementById('proDemoCreateCard');
+  const demoCreateInput = document.getElementById('proDemoCreateInput');
+  const demoCreateActionBtn = document.getElementById('proDemoCreateActionBtn');
+  const demoLayouts = document.getElementById('proDemoLayouts');
+  const demoLayoutCards = Array.from(document.querySelectorAll('.pro-demo-layout-option'));
+  const demoGuide = document.getElementById('proDemoGuide');
+  const demoGuideStep = document.getElementById('proDemoGuideStep');
+  const demoGuideTitle = document.getElementById('proDemoGuideTitle');
+  const demoGuideBody = document.getElementById('proDemoGuideBody');
+  const demoGuideActions = document.getElementById('proDemoGuideActions');
+  const demoCompleteOverlay = document.getElementById('proDemoCompleteOverlay');
+  const demoConfetti = document.getElementById('proDemoConfetti');
+  const demoCreateAccountBtn = document.getElementById('proDemoCreateAccountBtn');
+  const demoRestartBtn = document.getElementById('proDemoRestartBtn');
+  const tryEditorShell = document.getElementById('proDemoEditorShell');
+  const tryToolbar = document.getElementById('proTryToolbar');
+  const tryDocTitle = document.getElementById('proDemoDocTitle');
+  const tryEditor = document.getElementById('proTryEditor');
+  const tryEditorArea = document.getElementById('proDemoEditorArea');
+  const tryAiChangeLayer = document.getElementById('proDemoAiChangeLayer');
+  const tryAiTrigger = document.getElementById('proDemoAiTrigger');
+  const globalAiTrigger = document.getElementById('aiTrigger');
+  const tryAiModal = document.getElementById('proTryAiModal');
+  const tryAiCloseBtn = document.getElementById('proTryAiClose');
+  const tryInput = document.getElementById('proTryAiPrompt');
+  const trySend = document.getElementById('proTryAiSend');
+  const tryMessages = document.getElementById('proTryAiMessages');
+  let globalAiTriggerPreviousDisplay = '';
+  let demoAiTriggerLastActivate = 0;
+  let demoAiSendLastActivate = 0;
+  let demoGuideActionLastActivate = 0;
+  let demoStyleChoiceLastActivate = 0;
+  let demoAiCloseLastActivate = 0;
+  let demoPendingActionLastActivate = 0;
+  let demoCompleteActionLastActivate = 0;
 
-  if (!heroTypewriter || !subtitle || !buttons || !badge || !indicator || !featuresSection || !featureCards || !spotlightSection || !spotlightCard) {
+  if (
+    !navTryBtn
+    || !heroTypewriter
+    || !subtitle
+    || !buttons
+    || !heroTryBtn
+    || !badge
+    || !indicator
+    || !featuresSection
+    || !featureCards
+    || !spotlightSection
+    || !spotlightCard
+    || !trySection
+    || !tryShell
+    || !tryStageWrap
+    || !tryMinimizedPanel
+    || !tryCloseControl
+    || !tryMinimizeControl
+    || !tryFullscreenControl
+    || !tryRestoreBtn
+    || !demoStage
+    || !demoDashboardScreen
+    || !demoEditorScreen
+    || !demoCreateCard
+    || !demoCreateInput
+    || !demoCreateActionBtn
+    || !demoLayouts
+    || demoLayoutCards.length === 0
+    || !demoGuide
+    || !demoGuideStep
+    || !demoGuideTitle
+    || !demoGuideBody
+    || !demoGuideActions
+    || !demoCompleteOverlay
+    || !demoConfetti
+    || !demoCreateAccountBtn
+    || !demoRestartBtn
+    || !tryEditorShell
+    || !tryToolbar
+    || !tryDocTitle
+    || !tryEditor
+    || !tryEditorArea
+    || !tryAiChangeLayer
+    || !tryAiTrigger
+    || !tryAiModal
+    || !tryAiCloseBtn
+    || !tryInput
+    || !trySend
+    || !tryMessages
+  ) {
     return;
   }
 
@@ -843,11 +1352,1272 @@ function initLandingExperience() {
   };
   typeStep();
 
-  indicator.addEventListener('click', () => {
+  const scrollToTrySection = () => {
+    trySection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const onIndicatorClick = () => {
     featuresSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
+  };
+
+  navTryBtn.addEventListener('click', scrollToTrySection);
+  heroTryBtn.addEventListener('click', scrollToTrySection);
+  indicator.addEventListener('click', onIndicatorClick);
 
   const clamp = (value, min = 0, max = 1) => Math.max(min, Math.min(max, value));
+  let demoTimeouts = [];
+  let activeDemoStep = '';
+  let selectedDemoLayoutIndex = 0;
+  let selectedDemoStyleId = TRY_DEMO_STYLE_CHOICES[1]?.id || TRY_DEMO_STYLE_CHOICES[0].id;
+  let guidePositionRaf = null;
+  let demoAiChangeControlRaf = null;
+  let demoPendingChangeBatch = null;
+  let isTryMinimized = false;
+  let pendingTryMinimize = false;
+  let demoJsConfetti = null;
+
+  setupRichFormattingToolbar(tryToolbar, tryEditor, { docId: null });
+  ensureResizableImages(tryEditor);
+
+  const appendTryAiNodeMessage = (contentNode, role = 'ai', extraClass = '') => {
+    const message = document.createElement('div');
+    message.className = `ai-message ${role} ${extraClass}`.trim();
+    if (typeof contentNode === 'string') {
+      message.innerHTML = contentNode;
+    } else if (contentNode instanceof Node) {
+      message.appendChild(contentNode);
+    }
+    tryMessages.appendChild(message);
+    tryMessages.scrollTop = tryMessages.scrollHeight;
+    return message;
+  };
+
+  const appendTryAiMessage = (content, role = 'ai', extraClass = '') => {
+    const message = document.createElement('div');
+    message.className = `ai-message ${role} ${extraClass}`.trim();
+    message.textContent = String(content ?? '');
+    tryMessages.appendChild(message);
+    tryMessages.scrollTop = tryMessages.scrollHeight;
+    return message;
+  };
+
+  const addTryLoadingMessage = (label = 'Thinking') => {
+    const loadingNode = document.createElement('div');
+    loadingNode.className = 'ai-message ai loading';
+    loadingNode.innerHTML = `
+      <span class="ai-loading-label">${escapeHtmlValue(label)}</span>
+      <span class="loading-dots"><span></span><span></span><span></span></span>
+    `;
+    tryMessages.appendChild(loadingNode);
+    tryMessages.scrollTop = tryMessages.scrollHeight;
+    return () => {
+      if (loadingNode.parentNode) loadingNode.parentNode.removeChild(loadingNode);
+    };
+  };
+
+  const waitForDemo = (ms) => new Promise((resolve) => {
+    const entry = {
+      id: window.setTimeout(() => {
+        demoTimeouts = demoTimeouts.filter((item) => item !== entry);
+        resolve(true);
+      }, ms),
+      resolve
+    };
+    demoTimeouts.push(entry);
+  });
+
+  const clearDemoTimeouts = () => {
+    demoTimeouts.forEach((entry) => {
+      window.clearTimeout(entry.id);
+      entry.resolve(false);
+    });
+    demoTimeouts = [];
+  };
+
+  const clearDemoHighlights = () => {
+    demoStage.querySelectorAll('.pro-demo-highlight').forEach((element) => {
+      element.classList.remove('pro-demo-highlight');
+    });
+  };
+
+  const getCurrentDemoHighlights = () => Array.from(demoStage.querySelectorAll('.pro-demo-highlight'));
+
+  const resetGuidePosition = () => {
+    demoGuide.style.top = '';
+    demoGuide.style.right = '';
+    demoGuide.style.bottom = '';
+    demoGuide.style.left = '';
+  };
+
+  const getStageRelativeRect = (rect, stageRect) => ({
+    left: rect.left - stageRect.left,
+    top: rect.top - stageRect.top,
+    right: rect.right - stageRect.left,
+    bottom: rect.bottom - stageRect.top,
+    width: rect.width,
+    height: rect.height
+  });
+
+  const getRectOverlapArea = (firstRect, secondRect) => {
+    const overlapWidth = Math.max(0, Math.min(firstRect.right, secondRect.right) - Math.max(firstRect.left, secondRect.left));
+    const overlapHeight = Math.max(0, Math.min(firstRect.bottom, secondRect.bottom) - Math.max(firstRect.top, secondRect.top));
+    return overlapWidth * overlapHeight;
+  };
+
+  const getRectDistanceScore = (candidateRect, targetRect) => {
+    const dx = Math.max(targetRect.left - candidateRect.right, candidateRect.left - targetRect.right, 0);
+    const dy = Math.max(targetRect.top - candidateRect.bottom, candidateRect.top - targetRect.bottom, 0);
+    return Math.hypot(dx, dy);
+  };
+
+  const positionDemoGuide = (targets = getCurrentDemoHighlights()) => {
+    if (demoGuide.classList.contains('is-hidden') || isTryMinimized) return;
+
+    if (window.matchMedia('(max-width: 900px)').matches) {
+      resetGuidePosition();
+      return;
+    }
+
+    resetGuidePosition();
+
+    const stageRect = demoStage.getBoundingClientRect();
+    const guideRect = demoGuide.getBoundingClientRect();
+    const insetX = 18;
+    const insetBottom = 18;
+    const insetTop = demoEditorScreen.classList.contains('is-active')
+      ? Math.max(18, (tryEditorShell.querySelector('.top-bar')?.offsetHeight || 0) + 18)
+      : 18;
+    const guideWidth = guideRect.width;
+    const guideHeight = guideRect.height;
+    const viewportInset = 16;
+    const visibleLeft = Math.max(insetX, viewportInset - stageRect.left);
+    const visibleRight = Math.min(
+      stageRect.width - guideWidth - insetX,
+      window.innerWidth - stageRect.left - guideWidth - viewportInset
+    );
+    const visibleTop = Math.max(insetTop, viewportInset - stageRect.top);
+    const visibleBottom = Math.min(
+      stageRect.height - guideHeight - insetBottom,
+      window.innerHeight - stageRect.top - guideHeight - viewportInset
+    );
+    const maxLeft = Math.max(visibleLeft, Number.isFinite(visibleRight) ? visibleRight : stageRect.width - guideWidth - insetX);
+    const maxTop = Math.max(visibleTop, Number.isFinite(visibleBottom) ? visibleBottom : stageRect.height - guideHeight - insetBottom);
+    const targetRects = (Array.isArray(targets) ? targets : [targets])
+      .flat()
+      .filter(Boolean)
+      .map((target) => getStageRelativeRect(target.getBoundingClientRect(), stageRect));
+
+    const buildCandidate = (left, top) => {
+      const safeLeft = Math.min(Math.max(visibleLeft, left), maxLeft);
+      const safeTop = Math.min(Math.max(visibleTop, top), maxTop);
+      return {
+        left: safeLeft,
+        top: safeTop,
+        right: safeLeft + guideWidth,
+        bottom: safeTop + guideHeight
+      };
+    };
+
+    const candidates = [
+      buildCandidate(insetX, insetTop),
+      buildCandidate(stageRect.width - guideWidth - insetX, insetTop),
+      buildCandidate(insetX, stageRect.height - guideHeight - insetBottom),
+      buildCandidate(stageRect.width - guideWidth - insetX, stageRect.height - guideHeight - insetBottom),
+      buildCandidate((stageRect.width - guideWidth) / 2, insetTop),
+      buildCandidate((stageRect.width - guideWidth) / 2, stageRect.height - guideHeight - insetBottom)
+    ];
+
+    if (targetRects.length === 0) {
+      const fallback = candidates[3] || candidates[0];
+      if (!fallback) return;
+      demoGuide.style.left = `${fallback.left}px`;
+      demoGuide.style.top = `${fallback.top}px`;
+      demoGuide.style.right = 'auto';
+      demoGuide.style.bottom = 'auto';
+      return;
+    }
+
+    const bestCandidate = candidates.reduce((best, candidate) => {
+      const overlapArea = targetRects.reduce((sum, targetRect) => sum + getRectOverlapArea(candidate, targetRect), 0);
+      const distanceScore = Math.min(...targetRects.map((targetRect) => getRectDistanceScore(candidate, targetRect)));
+
+      if (!best) return { candidate, overlapArea, distanceScore };
+      if (overlapArea < best.overlapArea) return { candidate, overlapArea, distanceScore };
+      if (overlapArea === best.overlapArea && distanceScore > best.distanceScore) {
+        return { candidate, overlapArea, distanceScore };
+      }
+      return best;
+    }, null);
+
+    if (!bestCandidate) return;
+
+    demoGuide.style.left = `${bestCandidate.candidate.left}px`;
+    demoGuide.style.top = `${bestCandidate.candidate.top}px`;
+    demoGuide.style.right = 'auto';
+    demoGuide.style.bottom = 'auto';
+  };
+
+  const scheduleGuidePosition = (targets = getCurrentDemoHighlights()) => {
+    if (guidePositionRaf) {
+      window.cancelAnimationFrame(guidePositionRaf);
+    }
+
+    guidePositionRaf = window.requestAnimationFrame(() => {
+      guidePositionRaf = null;
+      positionDemoGuide(targets);
+    });
+  };
+
+  const clearDemoAiChangeControl = () => {
+    if (demoAiChangeControlRaf) {
+      window.cancelAnimationFrame(demoAiChangeControlRaf);
+      demoAiChangeControlRaf = null;
+    }
+    tryAiChangeLayer.innerHTML = '';
+  };
+
+  const renderDemoAiChangeControl = () => {
+    demoAiChangeControlRaf = null;
+
+    if (isTryMinimized || !demoPendingChangeBatch?.id || activeDemoStep !== 'editor-review') {
+      clearDemoAiChangeControl();
+      return;
+    }
+
+    const marker = tryEditor.querySelector(`[data-ai-change-batch="${demoPendingChangeBatch.id}"]`);
+    if (!marker) {
+      clearDemoAiChangeControl();
+      return;
+    }
+
+    const markerRect = marker.getBoundingClientRect();
+    const areaRect = tryEditorArea.getBoundingClientRect();
+    const scrollTop = tryEditorArea.scrollTop || 0;
+    const scrollLeft = tryEditorArea.scrollLeft || 0;
+
+    const card = document.createElement('div');
+    card.className = 'pro-demo-ai-change-card';
+    card.innerHTML = `
+      <div class="pro-demo-ai-change-title">
+        <i class="iconoir-sparks"></i>
+        <span>AI edits pending</span>
+      </div>
+      <div class="pro-demo-ai-change-actions">
+        <button type="button" class="pro-demo-ai-change-btn secondary" data-demo-ai-action="revert">
+          <i class="iconoir-undo"></i>
+          <span>Revert all</span>
+        </button>
+        <button type="button" class="pro-demo-ai-change-btn primary" data-demo-ai-action="save">
+          <i class="iconoir-check"></i>
+          <span>Save all</span>
+        </button>
+      </div>
+    `;
+
+    tryAiChangeLayer.innerHTML = '';
+    tryAiChangeLayer.appendChild(card);
+    card.querySelectorAll('[data-demo-ai-action]').forEach((button) => {
+      button.addEventListener('pointerdown', onDemoAiChangeActionActivate);
+      button.addEventListener('touchstart', onDemoAiChangeActionActivate);
+      button.addEventListener('click', onDemoAiChangeActionActivate);
+    });
+
+    const cardWidth = card.offsetWidth || 228;
+    const cardHeight = card.offsetHeight || 92;
+    const compactMode = window.matchMedia('(max-width: 900px)').matches;
+    const desiredLeft = compactMode
+      ? 8
+      : scrollLeft + tryEditorArea.clientWidth - cardWidth - 16;
+    const desiredTop = compactMode
+      ? markerRect.bottom - areaRect.top + scrollTop + 10
+      : scrollTop + 14;
+    const maxLeft = Math.max(8, tryEditorArea.scrollWidth - cardWidth - 8);
+    const maxTop = Math.max(8, tryEditorArea.scrollHeight - cardHeight - 8);
+
+    const left = Math.max(8, Math.min(desiredLeft, maxLeft));
+    const top = Math.max(8, Math.min(desiredTop, maxTop));
+
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+  };
+
+  const scheduleDemoAiChangeControlRender = () => {
+    if (demoAiChangeControlRaf) return;
+    demoAiChangeControlRaf = window.requestAnimationFrame(renderDemoAiChangeControl);
+  };
+
+  const isTryShellFullscreen = () => (
+    document.fullscreenElement === tryShell
+    || document.webkitFullscreenElement === tryShell
+  );
+
+  const exitTryShellFullscreen = async () => {
+    if (document.fullscreenElement === tryShell && typeof document.exitFullscreen === 'function') {
+      await document.exitFullscreen();
+      return;
+    }
+
+    if (document.webkitFullscreenElement === tryShell && typeof document.webkitExitFullscreen === 'function') {
+      document.webkitExitFullscreen();
+    }
+  };
+
+  const requestTryShellFullscreen = async () => {
+    if (typeof tryShell.requestFullscreen === 'function') {
+      await tryShell.requestFullscreen();
+      return;
+    }
+
+    if (typeof tryShell.webkitRequestFullscreen === 'function') {
+      tryShell.webkitRequestFullscreen();
+      return;
+    }
+
+    throw new Error('Fullscreen API unavailable');
+  };
+
+  const setTryMinimized = (minimized) => {
+    isTryMinimized = Boolean(minimized);
+    tryShell.classList.toggle('is-minimized', isTryMinimized);
+    tryMinimizedPanel.setAttribute('aria-hidden', isTryMinimized ? 'false' : 'true');
+    tryStageWrap.setAttribute('aria-hidden', isTryMinimized ? 'true' : 'false');
+    tryRestoreBtn.tabIndex = isTryMinimized ? 0 : -1;
+    tryMinimizeControl.setAttribute('aria-pressed', isTryMinimized ? 'true' : 'false');
+    tryMinimizeControl.setAttribute('aria-label', isTryMinimized ? 'Expand demo preview' : 'Minimize demo preview');
+    if ('inert' in tryStageWrap) {
+      tryStageWrap.inert = isTryMinimized;
+    } else {
+      tryStageWrap.toggleAttribute('inert', isTryMinimized);
+    }
+
+    if (isTryMinimized) {
+      clearDemoAiChangeControl();
+      resetGuidePosition();
+      return;
+    }
+
+    scheduleGuidePosition();
+    scheduleDemoAiChangeControlRender();
+  };
+
+  const syncTryShellFullscreenState = () => {
+    const isFullscreen = isTryShellFullscreen();
+    tryShell.classList.toggle('is-fullscreen', isFullscreen);
+    tryFullscreenControl.setAttribute('aria-pressed', isFullscreen ? 'true' : 'false');
+    tryFullscreenControl.setAttribute('aria-label', isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen');
+
+    if (isFullscreen && isTryMinimized) {
+      setTryMinimized(false);
+    }
+
+    if (!isFullscreen && pendingTryMinimize) {
+      pendingTryMinimize = false;
+      setTryMinimized(true);
+      return;
+    }
+
+    scheduleGuidePosition();
+    scheduleDemoAiChangeControlRender();
+  };
+
+  const clearDemoPendingChangeBatch = () => {
+    demoPendingChangeBatch = null;
+    clearDemoAiChangeControl();
+    removeAiChangeMarkers(null, tryEditor);
+  };
+
+  const beginDemoAiChangeBatch = (beforeHtml, batchId) => {
+    demoPendingChangeBatch = {
+      id: String(batchId || ''),
+      beforeHtml: String(beforeHtml ?? '')
+    };
+    scheduleDemoAiChangeControlRender();
+  };
+
+  const setDemoHighlights = (targets = []) => {
+    clearDemoHighlights();
+    const normalized = Array.isArray(targets) ? targets : [targets];
+    const resolvedTargets = normalized.flat().filter(Boolean);
+    resolvedTargets.forEach((target) => {
+      target.classList.add('pro-demo-highlight');
+    });
+    scheduleGuidePosition(resolvedTargets);
+  };
+
+  const setGuide = ({ step, title, body, actions = [] }) => {
+    demoGuide.classList.remove('is-hidden');
+    demoGuideStep.textContent = step;
+    demoGuideTitle.textContent = title;
+    demoGuideBody.textContent = body;
+    demoGuideActions.innerHTML = '';
+
+    actions.forEach((action) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `pro-demo-guide-btn ${action.variant || 'secondary'}`;
+      button.textContent = action.label;
+      button.dataset.demoGuideAction = 'true';
+      button._demoGuideActionHandler = action.onClick;
+      button.addEventListener('pointerdown', onDemoGuideButtonActivate);
+      button.addEventListener('touchstart', onDemoGuideButtonActivate);
+      button.addEventListener('click', onDemoGuideButtonActivate);
+      demoGuideActions.appendChild(button);
+    });
+
+    scheduleGuidePosition();
+  };
+
+  const typeIntoReadonlyInput = async (input, text, speed = 22) => {
+    input.classList.add('is-typing');
+    input.value = '';
+    for (let charIndex = 1; charIndex <= text.length; charIndex += 1) {
+      input.value = text.slice(0, charIndex);
+      if (charIndex === text.length) break;
+      const keepGoing = await waitForDemo(speed);
+      if (!keepGoing) {
+        input.classList.remove('is-typing');
+        return false;
+      }
+    }
+    input.classList.remove('is-typing');
+    return true;
+  };
+
+  const setActiveScreen = (screen) => {
+    demoDashboardScreen.classList.toggle('is-active', screen === 'dashboard');
+    demoEditorScreen.classList.toggle('is-active', screen === 'editor');
+  };
+
+  const setLayoutsVisible = (visible) => {
+    demoLayouts.classList.toggle('is-visible', visible);
+  };
+
+  const setTryAiVisible = (visible) => {
+    tryAiModal.style.display = visible ? 'flex' : 'none';
+    tryAiModal.classList.toggle('visible', visible);
+    tryEditorShell.classList.toggle('is-ai-open', visible);
+    demoEditorScreen.classList.toggle('is-ai-open', visible);
+    scheduleGuidePosition();
+  };
+
+  const getDemoJsConfetti = () => {
+    if (demoJsConfetti) return demoJsConfetti;
+    if (typeof window.JSConfetti !== 'function') return null;
+    demoJsConfetti = new window.JSConfetti();
+    return demoJsConfetti;
+  };
+
+  const clearTryStyleChoiceMessages = () => {
+    tryMessages.querySelectorAll('.pro-demo-style-choice-message').forEach((node) => node.remove());
+  };
+
+  const setDemoConfettiVisible = (visible) => {
+    demoConfetti.classList.remove('is-visible');
+    if (!visible) return;
+
+    const confetti = getDemoJsConfetti();
+    if (confetti) {
+      Promise.resolve(confetti.addConfetti({
+        confettiNumber: 140,
+        confettiRadius: 5,
+        confettiColors: ['#2563EB', '#7C3AED', '#EC4899', '#10B981', '#F59E0B']
+      })).catch(() => {
+        void demoConfetti.offsetWidth;
+        demoConfetti.classList.add('is-visible');
+      });
+      return;
+    }
+
+    void demoConfetti.offsetWidth;
+    demoConfetti.classList.add('is-visible');
+  };
+
+  const resetTryAiMessages = () => {
+    clearTryStyleChoiceMessages();
+    tryMessages.innerHTML = '<div class="ai-message ai">Ask AI to make the selected draft clearer, more visual, or more polished.</div>';
+    tryInput.value = '';
+    trySend.disabled = false;
+  };
+
+  const setEditorLayout = (layoutIndex, styleId = null, options = {}) => {
+    const { batchId = '' } = options;
+    const layout = getTryDemoLayout(layoutIndex);
+    tryDocTitle.value = layout.docTitle;
+    const html = styleId
+      ? getTryDemoStyledDocumentMarkup(layout, styleId)
+      : getTryDemoPlainDocumentMarkup(layout);
+    tryEditor.innerHTML = batchId ? annotateHtmlForAiBatch(html, batchId) : html;
+    ensureResizableImages(tryEditor);
+    tryEditorArea.scrollTop = 0;
+    scheduleDemoAiChangeControlRender();
+  };
+
+  const appendTryStyleChoiceMessage = () => {
+    clearTryStyleChoiceMessages();
+
+    const content = document.createElement('div');
+    content.className = 'pro-demo-style-choice-inner';
+
+    const intro = document.createElement('div');
+    intro.className = 'pro-demo-style-choice-title';
+    intro.textContent = 'Which style should I use?';
+
+    const options = document.createElement('div');
+    options.className = 'pro-demo-style-options';
+
+    TRY_DEMO_STYLE_CHOICES.forEach((choice) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'pro-demo-style-btn';
+      button.dataset.demoStyleChoice = choice.id;
+      button.innerHTML = `
+        <span class="pro-demo-style-btn-label">${escapeHtmlValue(choice.label)}</span>
+        <span class="pro-demo-style-btn-desc">${escapeHtmlValue(choice.description)}</span>
+      `;
+      button.addEventListener('pointerdown', onTryStyleChoiceActivate);
+      button.addEventListener('touchstart', onTryStyleChoiceActivate);
+      button.addEventListener('click', onTryStyleChoiceActivate);
+      options.appendChild(button);
+    });
+
+    content.append(intro, options);
+    return appendTryAiNodeMessage(content, 'ai', 'pro-demo-style-choice-message');
+  };
+
+  const showCompletionOverlay = () => {
+    activeDemoStep = 'complete';
+    clearDemoHighlights();
+    setDemoConfettiVisible(false);
+    demoGuide.classList.add('is-hidden');
+    demoStage.classList.remove('is-guided');
+    demoCompleteOverlay.classList.add('is-visible');
+    setTryAiVisible(false);
+  };
+
+  const showEditorReviewStep = () => {
+    activeDemoStep = 'editor-review';
+    setTryAiVisible(false);
+    setGuide({
+      step: 'Step 7 of 7',
+      title: 'Review the AI changes',
+      body: 'The new layout is highlighted. Save all to keep it, or Revert all to try a different style.',
+      actions: []
+    });
+
+    scheduleDemoAiChangeControlRender();
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const pendingCard = tryAiChangeLayer.querySelector('.pro-demo-ai-change-card');
+        const marker = demoPendingChangeBatch?.id
+          ? tryEditor.querySelector(`[data-ai-change-batch="${demoPendingChangeBatch.id}"]`)
+          : null;
+        setDemoHighlights([pendingCard, marker || tryEditor].filter(Boolean));
+      });
+    });
+  };
+
+  const showEditorCloseAiStep = () => {
+    activeDemoStep = 'editor-close';
+    clearDemoAiChangeControl();
+    setTryAiVisible(true);
+    setGuide({
+      step: 'Step 7 of 7',
+      title: 'Close the AI assistant',
+      body: 'The redesign is ready. Close the assistant to review the pending changes before saving them.',
+      actions: []
+    });
+    setDemoHighlights([tryAiCloseBtn]);
+  };
+
+  const finalizeDemoAiChangeBatch = async (mode = 'save') => {
+    if (!demoPendingChangeBatch) return;
+
+    if (mode === 'revert') {
+      const previousHtml = demoPendingChangeBatch.beforeHtml;
+      demoPendingChangeBatch = null;
+      clearDemoAiChangeControl();
+      tryEditor.innerHTML = previousHtml;
+      ensureResizableImages(tryEditor);
+      setTryAiVisible(true);
+      setDemoConfettiVisible(false);
+      demoStage.classList.add('is-guided');
+      appendTryAiMessage('Reverted the changes. Pick another style and I will try again.', 'ai');
+      const styleMessage = appendTryStyleChoiceMessage();
+      activeDemoStep = 'editor-style';
+      setGuide({
+        step: 'Step 6 of 7',
+        title: 'Choose a style',
+        body: 'The AI asks one follow-up question before applying the redesign.',
+        actions: []
+      });
+      setDemoHighlights([styleMessage]);
+      return;
+    }
+
+    removeAiChangeMarkers(demoPendingChangeBatch.id, tryEditor);
+    demoPendingChangeBatch = null;
+    clearDemoAiChangeControl();
+    appendTryAiMessage('Saved. The styled version is now applied.', 'ai');
+    activeDemoStep = 'editor-finish';
+    clearDemoHighlights();
+    setTryAiVisible(false);
+    demoStage.classList.remove('is-guided');
+    setDemoConfettiVisible(true);
+    setGuide({
+      step: 'Complete',
+      title: 'Take a final look',
+      body: 'The document is ready. Review the final version, then click Finish.',
+      actions: [{
+        label: 'Finish',
+        variant: 'primary',
+        onClick: showCompletionOverlay
+      }]
+    });
+  };
+
+  const runMockStyleSelection = async (styleId) => {
+    if (activeDemoStep !== 'editor-style') return;
+
+    const styleChoice = getTryDemoStyleChoice(styleId);
+    selectedDemoStyleId = styleChoice.id;
+    clearTryStyleChoiceMessages();
+    appendTryAiMessage(styleChoice.label, 'user');
+
+    activeDemoStep = 'editor-applying';
+    clearDemoHighlights();
+    setGuide({
+      step: 'Step 7 of 7',
+      title: 'Applying the new style',
+      body: `ProEdit is rendering a ${styleChoice.label.toLowerCase()} version of this document.`,
+      actions: []
+    });
+
+    const clearLoading = addTryLoadingMessage('Designing layout');
+    const keepGoing = await waitForDemo(980);
+    if (!keepGoing) return;
+
+    clearLoading();
+
+    const beforeHtml = tryEditor.innerHTML;
+    const batchId = createAiChangeBatchId();
+    setEditorLayout(selectedDemoLayoutIndex, styleChoice.id, { batchId });
+    beginDemoAiChangeBatch(beforeHtml, batchId);
+    appendTryAiMessage(`I rebuilt this draft in a ${styleChoice.label.toLowerCase()} style. Close the assistant to review the highlighted changes and save them if you want to keep them.`, 'ai');
+    showEditorCloseAiStep();
+  };
+
+  const showEditorStyleChoiceStep = () => {
+    activeDemoStep = 'editor-style';
+    setTryAiVisible(true);
+    trySend.disabled = true;
+    const styleMessage = appendTryStyleChoiceMessage();
+    setGuide({
+      step: 'Step 6 of 7',
+      title: 'Choose a style',
+      body: 'The AI asks one follow-up question before applying the redesign.',
+      actions: []
+    });
+    setDemoHighlights([styleMessage]);
+  };
+
+  const runMockStyleQuestion = async () => {
+    if (activeDemoStep !== 'editor-send') return;
+
+    activeDemoStep = 'editor-reading';
+    clearDemoHighlights();
+    appendTryAiMessage(tryInput.value || TRY_DEMO_EDITOR_PROMPT, 'user');
+    trySend.disabled = true;
+    setGuide({
+      step: 'Step 6 of 7',
+      title: 'The AI is reviewing the draft',
+      body: 'The assistant asks one quick follow-up question before styling the document.',
+      actions: []
+    });
+
+    const clearLoading = addTryLoadingMessage('Reading draft');
+    const keepGoing = await waitForDemo(760);
+    if (!keepGoing) return;
+
+    clearLoading();
+    appendTryAiMessage('I can make this more beautiful while keeping the same information. Which style should I use?', 'ai');
+    showEditorStyleChoiceStep();
+  };
+
+  const showEditorSendStep = () => {
+    activeDemoStep = 'editor-send';
+    trySend.disabled = false;
+    setGuide({
+      step: 'Step 5 of 7',
+      title: 'Send the redesign request',
+      body: 'Click Send to ask ProEdit to beautify this plain draft.',
+      actions: []
+    });
+    setDemoHighlights([trySend]);
+  };
+
+  const showEditorPromptStep = () => {
+    activeDemoStep = 'editor-prompt';
+    setTryAiVisible(true);
+    clearTryStyleChoiceMessages();
+    tryInput.value = '';
+    setGuide({
+      step: 'Step 5 of 7',
+      title: 'Prepare the AI request',
+      body: 'Use the helper button to type the preset beautify prompt into the assistant.',
+      actions: [{
+        label: 'Start typing',
+        variant: 'primary',
+        onClick: async () => {
+          const typed = await typeIntoReadonlyInput(tryInput, TRY_DEMO_EDITOR_PROMPT, 18);
+          if (typed) showEditorSendStep();
+        }
+      }]
+    });
+    setDemoHighlights([tryInput.closest('.ai-input-area') || tryAiModal]);
+  };
+
+  const showEditorTriggerStep = () => {
+    activeDemoStep = 'editor-trigger';
+    setActiveScreen('editor');
+    setLayoutsVisible(false);
+    demoCompleteOverlay.classList.remove('is-visible');
+    demoGuide.classList.remove('is-hidden');
+    demoStage.classList.add('is-guided');
+    clearDemoPendingChangeBatch();
+    setTryAiVisible(false);
+    resetTryAiMessages();
+    setGuide({
+      step: 'Step 4 of 7',
+      title: 'Open the AI assistant',
+      body: 'This layout opens as a plain draft. Click the AI button to redesign it.',
+      actions: []
+    });
+    setDemoHighlights([tryAiTrigger]);
+  };
+
+  const showLayoutSelectionStep = () => {
+    activeDemoStep = 'layouts';
+    setLayoutsVisible(true);
+    setGuide({
+      step: 'Step 3 of 7',
+      title: 'Select a layout',
+      body: 'Choose one of the generated layouts to open it in the editor.',
+      actions: []
+    });
+    setDemoHighlights(demoLayoutCards);
+  };
+
+  const runLayoutGenerationStep = async () => {
+    activeDemoStep = 'create-loading';
+    clearDemoHighlights();
+    setGuide({
+      step: 'Step 3 of 7',
+      title: 'Generating layouts',
+      body: 'ProEdit is generating a few layout directions for this idea.',
+      actions: []
+    });
+    const keepGoing = await waitForDemo(1500);
+    if (keepGoing) showLayoutSelectionStep();
+  };
+
+  const showPromptReviewStep = () => {
+    activeDemoStep = 'create-ready';
+    setGuide({
+      step: 'Step 2 of 7',
+      title: 'Review the setup',
+      body: 'The prompt is ready. Click the arrow in the input to generate layouts.',
+      actions: []
+    });
+    setDemoHighlights([demoCreateCard]);
+  };
+
+  const showPromptTypingStep = () => {
+    activeDemoStep = 'create-typing';
+    setGuide({
+      step: 'Step 2 of 7',
+      title: 'Generate the prompt',
+      body: 'Use the helper button to type a preset AI prompt into the dashboard input.',
+      actions: [{
+        label: 'Start typing',
+        variant: 'primary',
+        onClick: async () => {
+          const typed = await typeIntoReadonlyInput(demoCreateInput, TRY_DEMO_CREATE_PROMPT, 18);
+          if (typed) showPromptReviewStep();
+        }
+      }]
+    });
+    setDemoHighlights([demoCreateCard]);
+  };
+
+  const showDashboardStep = () => {
+    activeDemoStep = 'dashboard';
+    setActiveScreen('dashboard');
+    setLayoutsVisible(false);
+    demoCompleteOverlay.classList.remove('is-visible');
+    demoGuide.classList.remove('is-hidden');
+    demoStage.classList.add('is-guided');
+    demoCreateInput.value = '';
+    resetTryAiMessages();
+    setGuide({
+      step: 'Step 1 of 7',
+      title: 'Start on the home screen',
+      body: 'Click Create with AI to begin the ProEdit workflow.',
+      actions: []
+    });
+    setDemoHighlights([demoCreateCard]);
+  };
+
+  const resetDemoTour = () => {
+    clearDemoTimeouts();
+    clearDemoHighlights();
+    selectedDemoLayoutIndex = 0;
+    selectedDemoStyleId = TRY_DEMO_STYLE_CHOICES[1]?.id || TRY_DEMO_STYLE_CHOICES[0].id;
+    clearDemoPendingChangeBatch();
+    setDemoConfettiVisible(false);
+    setEditorLayout(selectedDemoLayoutIndex);
+    showDashboardStep();
+  };
+
+  const onDemoCreateCardClick = () => {
+    if (activeDemoStep !== 'dashboard') return;
+    showPromptTypingStep();
+  };
+
+  const onDemoCreateActionClick = () => {
+    if (activeDemoStep !== 'create-ready') return;
+    runLayoutGenerationStep();
+  };
+
+  const demoLayoutCardHandlers = demoLayoutCards.map((card) => {
+    const handler = () => {
+      if (activeDemoStep !== 'layouts') return;
+      selectedDemoLayoutIndex = Number(card.dataset.layoutIndex || 0);
+      selectedDemoStyleId = TRY_DEMO_STYLE_CHOICES[1]?.id || TRY_DEMO_STYLE_CHOICES[0].id;
+      setEditorLayout(selectedDemoLayoutIndex);
+      showEditorTriggerStep();
+    };
+    card.addEventListener('click', handler);
+    return { card, handler };
+  });
+
+  const onTryAiTriggerClick = () => {
+    if (!activeDemoStep || !activeDemoStep.startsWith('editor')) {
+      if (activeDemoStep === 'dashboard' || activeDemoStep === 'layouts' || activeDemoStep === 'create-ready' || activeDemoStep === 'create-typing' || activeDemoStep === 'create-loading') {
+        return;
+      }
+      showEditorTriggerStep();
+      return;
+    }
+
+    if (activeDemoStep === 'editor-trigger') {
+      showEditorPromptStep();
+      return;
+    }
+
+    if (['editor-prompt', 'editor-send', 'editor-style', 'editor-reading', 'editor-applying', 'editor-close'].includes(activeDemoStep)) {
+      setTryAiVisible(true);
+      return;
+    }
+
+    if (['editor-review', 'editor-finish', 'complete'].includes(activeDemoStep)) {
+      setTryAiVisible(false);
+    }
+  };
+
+  const onTryAiTriggerActivate = (event) => {
+    if (event) {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const now = Number.isFinite(window?.performance?.now?.()) ? performance.now() : Date.now();
+    if (now - demoAiTriggerLastActivate < 140) return;
+    demoAiTriggerLastActivate = now;
+
+    onTryAiTriggerClick();
+  };
+
+  const onGlobalAiTriggerClick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onTryAiTriggerClick();
+  };
+
+  const onGlobalAiTriggerActivate = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onTryAiTriggerActivate();
+  };
+
+  const onDemoStageClick = (event) => {
+    const aiTriggerTarget = event.target.closest('#proDemoAiTrigger');
+    if (aiTriggerTarget && demoStage.contains(aiTriggerTarget)) {
+      onTryAiTriggerClick();
+      return;
+    }
+  };
+
+  const onDemoStagePointerDown = (event) => {
+    const aiTriggerTarget = event.target.closest?.('#proDemoAiTrigger');
+    if (aiTriggerTarget && demoStage.contains(aiTriggerTarget)) {
+      onTryAiTriggerActivate(event);
+    }
+  };
+
+  const getEventClientPoint = (event) => {
+    if (typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+      return { x: event.clientX, y: event.clientY };
+    }
+
+    const touch = event.touches?.[0] || event.changedTouches?.[0];
+    if (touch) {
+      return { x: touch.clientX, y: touch.clientY };
+    }
+
+    return null;
+  };
+
+  const isPointInsideRect = (point, rect) => (
+    point.x >= rect.left
+    && point.x <= rect.right
+    && point.y >= rect.top
+    && point.y <= rect.bottom
+  );
+
+  const getDemoActivationNow = () => (Number.isFinite(window?.performance?.now?.()) ? performance.now() : Date.now());
+
+  const getDemoHitElement = (event, selector, scope) => {
+    const point = getEventClientPoint(event);
+    if (!point || !scope) return null;
+
+    return Array.from(scope.querySelectorAll(selector)).find((element) => {
+      const rect = element.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && isPointInsideRect(point, rect);
+    }) || null;
+  };
+
+  function onDemoGuideButtonActivate(event, explicitButton = null) {
+    const button = explicitButton || event?.currentTarget;
+    const actionHandler = button?._demoGuideActionHandler;
+    if (typeof actionHandler !== 'function') return;
+
+    if (event) {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const now = getDemoActivationNow();
+    if (now - demoGuideActionLastActivate < 140) return;
+    demoGuideActionLastActivate = now;
+
+    actionHandler();
+  }
+
+  function onTryStyleChoiceActivate(event, explicitButton = null) {
+    const button = explicitButton || event?.currentTarget;
+    const styleId = button?.dataset?.demoStyleChoice;
+    if (!styleId || activeDemoStep !== 'editor-style') return;
+
+    if (event) {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const now = getDemoActivationNow();
+    if (now - demoStyleChoiceLastActivate < 140) return;
+    demoStyleChoiceLastActivate = now;
+
+    runMockStyleSelection(styleId);
+  }
+
+  function onTryAiCloseActivate(event) {
+    if (!tryAiModal.classList.contains('visible')) return;
+
+    if (event) {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const now = getDemoActivationNow();
+    if (now - demoAiCloseLastActivate < 140) return;
+    demoAiCloseLastActivate = now;
+
+    onTryAiCloseClick();
+  }
+
+  function onDemoAiChangeActionActivate(event, explicitButton = null) {
+    const button = explicitButton || event?.currentTarget;
+    const action = button?.dataset?.demoAiAction;
+    if (!action || activeDemoStep !== 'editor-review') return;
+
+    if (event) {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const now = getDemoActivationNow();
+    if (now - demoPendingActionLastActivate < 140) return;
+    demoPendingActionLastActivate = now;
+
+    finalizeDemoAiChangeBatch(action);
+  }
+
+  function onDemoRestartActivate(event) {
+    if (!demoCompleteOverlay.classList.contains('is-visible')) return;
+
+    if (event) {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const now = getDemoActivationNow();
+    if (now - demoCompleteActionLastActivate < 140) return;
+    demoCompleteActionLastActivate = now;
+
+    onDemoRestartClick();
+  }
+
+  function onDemoCreateAccountActivate(event) {
+    if (!demoCompleteOverlay.classList.contains('is-visible')) return;
+
+    if (event) {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    const now = getDemoActivationNow();
+    if (now - demoCompleteActionLastActivate < 140) return;
+    demoCompleteActionLastActivate = now;
+
+    onDemoCreateAccountClick();
+  }
+
+  const onDemoDocumentAiPointerDown = (event) => {
+    if (!activeDemoStep || !activeDemoStep.startsWith('editor')) return;
+    if (!demoEditorScreen.classList.contains('is-active')) return;
+
+    const point = getEventClientPoint(event);
+    if (!point) return;
+
+    const triggerRect = tryAiTrigger.getBoundingClientRect();
+    if (triggerRect.width <= 0 || triggerRect.height <= 0) return;
+    if (!isPointInsideRect(point, triggerRect)) return;
+
+    onTryAiTriggerActivate(event);
+  };
+
+  const onDemoDocumentGuidePointerDown = (event) => {
+    const button = getDemoHitElement(event, '.pro-demo-guide-btn', demoGuideActions);
+    if (button) onDemoGuideButtonActivate(event, button);
+  };
+
+  const onDemoDocumentStylePointerDown = (event) => {
+    const button = getDemoHitElement(event, '[data-demo-style-choice]', tryMessages);
+    if (button) onTryStyleChoiceActivate(event, button);
+  };
+
+  const onDemoDocumentAiClosePointerDown = (event) => {
+    const button = getDemoHitElement(event, '#proTryAiClose', tryAiModal);
+    if (button) onTryAiCloseActivate(event);
+  };
+
+  const onDemoDocumentAiChangePointerDown = (event) => {
+    const button = getDemoHitElement(event, '[data-demo-ai-action]', tryAiChangeLayer);
+    if (button) onDemoAiChangeActionActivate(event, button);
+  };
+
+  const onDemoDocumentCompletePointerDown = (event) => {
+    const createButton = getDemoHitElement(event, '#proDemoCreateAccountBtn', demoCompleteOverlay);
+    if (createButton) {
+      onDemoCreateAccountActivate(event);
+      return;
+    }
+
+    const restartButton = getDemoHitElement(event, '#proDemoRestartBtn', demoCompleteOverlay);
+    if (restartButton) {
+      onDemoRestartActivate(event);
+    }
+  };
+
+  const onTryAiCloseClick = () => {
+    setTryAiVisible(false);
+    if (activeDemoStep === 'editor-close') {
+      showEditorReviewStep();
+      return;
+    }
+    if (['editor-prompt', 'editor-send', 'editor-style'].includes(activeDemoStep)) {
+      showEditorTriggerStep();
+    }
+  };
+
+  const onTryCloseControlClick = (event) => {
+    event.preventDefault();
+  };
+
+  const onTryMinimizeControlClick = async () => {
+    if (isTryMinimized) {
+      setTryMinimized(false);
+      return;
+    }
+
+    if (isTryShellFullscreen()) {
+      pendingTryMinimize = true;
+      try {
+        await exitTryShellFullscreen();
+      } catch (error) {
+        pendingTryMinimize = false;
+        setTryMinimized(true);
+      }
+      return;
+    }
+
+    setTryMinimized(true);
+  };
+
+  const onTryRestoreClick = () => {
+    setTryMinimized(false);
+  };
+
+  const onTryFullscreenControlClick = async () => {
+    if (isTryShellFullscreen()) {
+      try {
+        await exitTryShellFullscreen();
+      } catch (error) {
+        syncTryShellFullscreenState();
+      }
+      return;
+    }
+
+    if (isTryMinimized) {
+      setTryMinimized(false);
+    }
+
+    try {
+      await requestTryShellFullscreen();
+    } catch (error) {
+      syncTryShellFullscreenState();
+    }
+  };
+
+  const onTryShellFullscreenChange = () => {
+    syncTryShellFullscreenState();
+  };
+
+  const onTrySendClick = () => {
+    if (activeDemoStep !== 'editor-send') return;
+    runMockStyleQuestion();
+  };
+
+  const onTrySendActivate = (event) => {
+    if (event) {
+      if (typeof event.button === 'number' && event.button !== 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    if (trySend.disabled || activeDemoStep !== 'editor-send') return;
+
+    const now = Number.isFinite(window?.performance?.now?.()) ? performance.now() : Date.now();
+    if (now - demoAiSendLastActivate < 140) return;
+    demoAiSendLastActivate = now;
+
+    onTrySendClick();
+  };
+
+  const onDemoDocumentAiSendPointerDown = (event) => {
+    if (activeDemoStep !== 'editor-send') return;
+    if (!tryAiModal.classList.contains('visible')) return;
+
+    const point = getEventClientPoint(event);
+    if (!point) return;
+
+    const sendRect = trySend.getBoundingClientRect();
+    if (sendRect.width <= 0 || sendRect.height <= 0) return;
+    if (!isPointInsideRect(point, sendRect)) return;
+
+    onTrySendActivate(event);
+  };
+
+  const onTryMessagesClick = (event) => {
+    const styleBtn = event.target.closest('[data-demo-style-choice]');
+    if (!styleBtn || !tryMessages.contains(styleBtn)) return;
+    event.preventDefault();
+    runMockStyleSelection(styleBtn.dataset.demoStyleChoice);
+  };
+
+  const onDemoAiChangeLayerClick = (event) => {
+    const actionBtn = event.target.closest('[data-demo-ai-action]');
+    if (!actionBtn || !tryAiChangeLayer.contains(actionBtn)) return;
+    event.preventDefault();
+    finalizeDemoAiChangeBatch(actionBtn.dataset.demoAiAction);
+  };
+
+  const onDemoRestartClick = () => {
+    resetDemoTour();
+  };
+
+  const onDemoCreateAccountClick = () => {
+    renderLogin({ mode: 'signup' });
+  };
+
+  demoCreateCard.addEventListener('click', onDemoCreateCardClick);
+  demoCreateActionBtn.addEventListener('click', onDemoCreateActionClick);
+  tryAiTrigger.addEventListener('pointerdown', onTryAiTriggerActivate);
+  tryAiTrigger.addEventListener('touchstart', onTryAiTriggerActivate);
+  tryAiTrigger.addEventListener('click', onTryAiTriggerActivate);
+  demoStage.addEventListener('click', onDemoStageClick);
+  demoStage.addEventListener('pointerdown', onDemoStagePointerDown, true);
+  document.addEventListener('pointerdown', onDemoDocumentAiPointerDown, true);
+  document.addEventListener('touchstart', onDemoDocumentAiPointerDown, { capture: true, passive: false });
+  document.addEventListener('pointerdown', onDemoDocumentGuidePointerDown, true);
+  document.addEventListener('touchstart', onDemoDocumentGuidePointerDown, { capture: true, passive: false });
+  document.addEventListener('pointerdown', onDemoDocumentStylePointerDown, true);
+  document.addEventListener('touchstart', onDemoDocumentStylePointerDown, { capture: true, passive: false });
+  document.addEventListener('pointerdown', onDemoDocumentAiClosePointerDown, true);
+  document.addEventListener('touchstart', onDemoDocumentAiClosePointerDown, { capture: true, passive: false });
+  document.addEventListener('pointerdown', onDemoDocumentAiChangePointerDown, true);
+  document.addEventListener('touchstart', onDemoDocumentAiChangePointerDown, { capture: true, passive: false });
+  document.addEventListener('pointerdown', onDemoDocumentCompletePointerDown, true);
+  document.addEventListener('touchstart', onDemoDocumentCompletePointerDown, { capture: true, passive: false });
+  tryAiCloseBtn.addEventListener('pointerdown', onTryAiCloseActivate);
+  tryAiCloseBtn.addEventListener('touchstart', onTryAiCloseActivate);
+  tryAiCloseBtn.addEventListener('click', onTryAiCloseActivate);
+  tryCloseControl.addEventListener('click', onTryCloseControlClick);
+  tryMinimizeControl.addEventListener('click', onTryMinimizeControlClick);
+  tryFullscreenControl.addEventListener('click', onTryFullscreenControlClick);
+  tryRestoreBtn.addEventListener('click', onTryRestoreClick);
+  trySend.addEventListener('pointerdown', onTrySendActivate);
+  trySend.addEventListener('touchstart', onTrySendActivate);
+  trySend.addEventListener('click', onTrySendActivate);
+  document.addEventListener('pointerdown', onDemoDocumentAiSendPointerDown, true);
+  document.addEventListener('touchstart', onDemoDocumentAiSendPointerDown, { capture: true, passive: false });
+  tryMessages.addEventListener('click', onTryMessagesClick);
+  tryAiChangeLayer.addEventListener('click', onDemoAiChangeLayerClick);
+  tryEditorArea.addEventListener('scroll', scheduleDemoAiChangeControlRender, { passive: true });
+  demoRestartBtn.addEventListener('pointerdown', onDemoRestartActivate);
+  demoRestartBtn.addEventListener('touchstart', onDemoRestartActivate);
+  demoRestartBtn.addEventListener('click', onDemoRestartActivate);
+  demoCreateAccountBtn.addEventListener('pointerdown', onDemoCreateAccountActivate);
+  demoCreateAccountBtn.addEventListener('touchstart', onDemoCreateAccountActivate);
+  demoCreateAccountBtn.addEventListener('click', onDemoCreateAccountActivate);
+  if (globalAiTrigger) {
+    globalAiTriggerPreviousDisplay = globalAiTrigger.style.display;
+    globalAiTrigger.style.display = 'none';
+    globalAiTrigger.addEventListener('click', onGlobalAiTriggerClick);
+    globalAiTrigger.addEventListener('pointerdown', onGlobalAiTriggerActivate);
+    globalAiTrigger.addEventListener('touchstart', onGlobalAiTriggerActivate);
+  }
+  document.addEventListener('fullscreenchange', onTryShellFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onTryShellFullscreenChange);
+
+  setTryMinimized(false);
+  resetDemoTour();
 
   const updateScrollScene = () => {
     const viewportHeight = landing.clientHeight;
@@ -866,7 +2636,7 @@ function initLandingExperience() {
     const featureStart = featuresSection.offsetTop;
     const featureEnd = featureStart + featuresSection.offsetHeight - viewportHeight;
     const featureProgress = clamp((currentTop - featureStart) / Math.max(1, featureEnd - featureStart));
-    const featureTranslate = 120 - (featureProgress * 280);
+    const featureTranslate = 120 - (featureProgress * 230);
     featureCards.style.transform = `translate3d(${featureTranslate}vw, 0, 0)`;
 
     const spotlightStart = spotlightSection.offsetTop;
@@ -880,6 +2650,8 @@ function initLandingExperience() {
     spotlightCard.style.transform = `scale(${scale})`;
 
     indicator.classList.toggle('is-hidden', currentTop > 40);
+    scheduleGuidePosition();
+    scheduleDemoAiChangeControlRender();
   };
 
   landing.addEventListener('scroll', updateScrollScene, { passive: true });
@@ -887,8 +2659,71 @@ function initLandingExperience() {
   updateScrollScene();
 
   cleanupLandingExperience = () => {
+    navTryBtn.removeEventListener('click', scrollToTrySection);
+    heroTryBtn.removeEventListener('click', scrollToTrySection);
+    indicator.removeEventListener('click', onIndicatorClick);
+    clearDemoTimeouts();
+    demoCreateCard.removeEventListener('click', onDemoCreateCardClick);
+    demoCreateActionBtn.removeEventListener('click', onDemoCreateActionClick);
+    demoLayoutCardHandlers.forEach(({ card, handler }) => {
+      card.removeEventListener('click', handler);
+    });
+    tryAiTrigger.removeEventListener('pointerdown', onTryAiTriggerActivate);
+    tryAiTrigger.removeEventListener('touchstart', onTryAiTriggerActivate);
+    tryAiTrigger.removeEventListener('click', onTryAiTriggerActivate);
+    demoStage.removeEventListener('click', onDemoStageClick);
+    demoStage.removeEventListener('pointerdown', onDemoStagePointerDown, true);
+    document.removeEventListener('pointerdown', onDemoDocumentAiPointerDown, true);
+    document.removeEventListener('touchstart', onDemoDocumentAiPointerDown, true);
+    document.removeEventListener('pointerdown', onDemoDocumentGuidePointerDown, true);
+    document.removeEventListener('touchstart', onDemoDocumentGuidePointerDown, true);
+    document.removeEventListener('pointerdown', onDemoDocumentStylePointerDown, true);
+    document.removeEventListener('touchstart', onDemoDocumentStylePointerDown, true);
+    document.removeEventListener('pointerdown', onDemoDocumentAiClosePointerDown, true);
+    document.removeEventListener('touchstart', onDemoDocumentAiClosePointerDown, true);
+    document.removeEventListener('pointerdown', onDemoDocumentAiChangePointerDown, true);
+    document.removeEventListener('touchstart', onDemoDocumentAiChangePointerDown, true);
+    document.removeEventListener('pointerdown', onDemoDocumentCompletePointerDown, true);
+    document.removeEventListener('touchstart', onDemoDocumentCompletePointerDown, true);
+    tryAiCloseBtn.removeEventListener('pointerdown', onTryAiCloseActivate);
+    tryAiCloseBtn.removeEventListener('touchstart', onTryAiCloseActivate);
+    tryAiCloseBtn.removeEventListener('click', onTryAiCloseActivate);
+    tryCloseControl.removeEventListener('click', onTryCloseControlClick);
+    tryMinimizeControl.removeEventListener('click', onTryMinimizeControlClick);
+    tryFullscreenControl.removeEventListener('click', onTryFullscreenControlClick);
+    tryRestoreBtn.removeEventListener('click', onTryRestoreClick);
+    trySend.removeEventListener('pointerdown', onTrySendActivate);
+    trySend.removeEventListener('touchstart', onTrySendActivate);
+    trySend.removeEventListener('click', onTrySendActivate);
+    document.removeEventListener('pointerdown', onDemoDocumentAiSendPointerDown, true);
+    document.removeEventListener('touchstart', onDemoDocumentAiSendPointerDown, true);
+    tryMessages.removeEventListener('click', onTryMessagesClick);
+    tryAiChangeLayer.removeEventListener('click', onDemoAiChangeLayerClick);
+    tryEditorArea.removeEventListener('scroll', scheduleDemoAiChangeControlRender);
+    demoRestartBtn.removeEventListener('pointerdown', onDemoRestartActivate);
+    demoRestartBtn.removeEventListener('touchstart', onDemoRestartActivate);
+    demoRestartBtn.removeEventListener('click', onDemoRestartActivate);
+    demoCreateAccountBtn.removeEventListener('pointerdown', onDemoCreateAccountActivate);
+    demoCreateAccountBtn.removeEventListener('touchstart', onDemoCreateAccountActivate);
+    demoCreateAccountBtn.removeEventListener('click', onDemoCreateAccountActivate);
+    if (globalAiTrigger) {
+      globalAiTrigger.removeEventListener('click', onGlobalAiTriggerClick);
+      globalAiTrigger.removeEventListener('pointerdown', onGlobalAiTriggerActivate);
+      globalAiTrigger.removeEventListener('touchstart', onGlobalAiTriggerActivate);
+      globalAiTrigger.style.display = globalAiTriggerPreviousDisplay || '';
+    }
     landing.removeEventListener('scroll', updateScrollScene);
     window.removeEventListener('resize', updateScrollScene);
+    document.removeEventListener('fullscreenchange', onTryShellFullscreenChange);
+    document.removeEventListener('webkitfullscreenchange', onTryShellFullscreenChange);
+    clearDemoAiChangeControl();
+    if (isTryShellFullscreen()) {
+      exitTryShellFullscreen().catch(() => { });
+    }
+    if (guidePositionRaf) {
+      window.cancelAnimationFrame(guidePositionRaf);
+      guidePositionRaf = null;
+    }
   };
 }
 
@@ -1315,15 +3150,15 @@ function renderDashboard() {
                 <p>Start writing from scratch.</p>
               </div>
             </div>
-            <div class="quick-start-card" id="aiCreateCard" style="cursor: default;">
+            <div class="quick-start-card ai-create-quick-card" id="aiCreateCard" style="cursor: default;">
               <div class="card-image card-gradient-purple" style="display: flex; align-items: center; justify-content: center;">
                 <i class="iconoir-sparks" style="font-size: 24px; color: white;"></i>
               </div>
-              <div class="card-content" style="padding: 1rem;">
-                <h3 style="margin-bottom: 0.5rem;">Create with AI</h3>
-                <div class="ai-create-input-wrapper" style="display: flex; align-items: center; border: 1px solid var(--border); border-radius: 6px; padding: 0.25rem 0.5rem; background: var(--bg);">
-                  <input type="text" id="aiDocInput" placeholder="Describe your document idea..." style="border: none; outline: none; background: transparent; flex: 1; font-size: 0.85rem; padding: 0.25rem;">
-                  <button id="aiDocBtn" style="background: none; border: none; cursor: pointer; display: flex; align-items: center; color: var(--primary);"><i class="iconoir-arrow-right"></i></button>
+              <div class="card-content ai-create-card-content">
+                <h3 class="ai-create-card-title">Create with AI</h3>
+                <div class="ai-create-input-wrapper pro-app-create-input-wrap">
+                  <input type="text" id="aiDocInput" class="pro-app-create-input" placeholder="Describe your document idea...">
+                  <button id="aiDocBtn" type="button" class="pro-app-create-submit" aria-label="Create with AI"><i class="iconoir-arrow-right"></i></button>
                 </div>
               </div>
             </div>
@@ -3885,8 +5720,8 @@ function markEditorContentForAiBatch(editor, batchId) {
   });
 }
 
-function removeAiChangeMarkers(batchId = null) {
-  const editor = document.getElementById('editor');
+function removeAiChangeMarkers(batchId = null, targetEditor = null) {
+  const editor = targetEditor || document.getElementById('editor');
   if (!editor) return;
 
   const selector = batchId
